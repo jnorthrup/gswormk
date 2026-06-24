@@ -1,0 +1,16 @@
+{
+  "name": "trader-console",
+  "version": "0.1.0",
+  "description": "Standalone Node.js console app implementing a quota-aware quant trader architecture with SQLite or DuckDB storage.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build:local": "node --check src/cli.mjs && node --check src/trader/engine.mjs && node --check src/storage/sqlite-storage.mjs && node --check src/storage/duckdb-storage.mjs",
+    "simulate": "node src/cli.mjs simulate",
+    "status": "node src/cli.mjs status",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

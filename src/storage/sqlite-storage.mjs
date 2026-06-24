@@ -1,0 +1,146 @@
+import { DatabaseSync } from 'node:sqlite';
+import { schema } from './schema.mjs';
+
+export class SQLiteStorage {
+  constructor({ path }) {
+    this.path = path;
+    this.db = null;
+  }
+
+  async init() {
+    this.db = new DatabaseSync(this.path);
+    this.db.exec(schema.candles);
+    this.db.exec(schema.signals);
+    this.db.exec(schema.orders);
+    this.db.exec(schema.quotaMetrics);
+  }
+
+  async close() {
+    this.db?.close();
+  }
+
+  async upsertCandles(candles) {
+    const statement = this.db.prepare(`
+      INSERT INTO candles (symbol, granularity, start, open, high, low, close, volume)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(symbol, granularity, start)
+      DO UPDATE SET
+        open = excluded.open,
+        high = excluded.high,
+        low = excluded.low,
+        close = excluded.close,
+        volume = excluded.volume
+    `);
+
+    for (const candle of candles) {
+      statement.run(
+        candle.symbol,
+        candle.granularity,
+        candle.start,
+        candle.open,
+        candle.high,
+        candle.low,
+        candle.close,
+        candle.volume,
+      );
+    }
+  }
+
+  async getRecentCandles({ symbol, limit }) {
+    const statement = this.db.prepare(`
+      SELECT symbol, granularity, start, open, high, low, close, volume
+      FROM candles
+      WHERE symbol = ?
+      ORDER BY start DESC
+      LIMIT ?
+    `);
+    return statement.all(symbol, limit);
+  }
+
+  async insertSignal(signal) {
+    const statement = this.db.prepare(`
+      INSERT INTO signals (
+        timestamp, symbol, mid, spread, effective_cost, obi, innovation_z, rv_down,
+        tail_dependence, alignment, cache_quality, effective_drift, target_weight,
+        current_weight, trigger, drawdown, quota_hit
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    statement.run(
+      signal.timestamp,
+      signal.symbol,
+      signal.mid,
+      signal.spread,
+      signal.effectiveCost,
+      signal.obi,
+      signal.innovationZ,
+      signal.rvDown,
+      signal.tailDependence,
+      signal.alignment,
+      signal.cacheQuality,
+      signal.effectiveDrift,
+      signal.targetWeight,
+      signal.currentWeight,
+      signal.trigger,
+      signal.drawdown,
+      signal.quotaHit,
+    );
+  }
+
+  async insertOrder(order) {
+    const statement = this.db.prepare(`
+      INSERT INTO orders (timestamp, symbol, side, quantity, price, gross, remaining_cash, remaining_units)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    statement.run(
+      order.timestamp,
+      order.symbol,
+      order.side,
+      order.quantity,
+      order.price,
+      order.gross,
+      order.remainingCash,
+      order.remainingUnits,
+    );
+  }
+
+  async insertQuotaMetric(metric) {
+    const statement = this.db.prepare(`
+      INSERT INTO quota_metrics (timestamp, symbol, cache_hits, api_calls, gap_count, cache_hit_ratio)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    statement.run(
+      metric.timestamp,
+      metric.symbol,
+      metric.cacheHits,
+      metric.apiCalls,
+      metric.gapCount,
+      metric.cacheHitRatio,
+    );
+  }
+
+  async getRecentSignals({ limit }) {
+    return this.db.prepare('SELECT * FROM signals ORDER BY id DESC LIMIT ?').all(limit);
+  }
+
+  async getRecentOrders({ limit }) {
+    return this.db.prepare('SELECT * FROM orders ORDER BY id DESC LIMIT ?').all(limit);
+  }
+
+  async getStatusSnapshot() {
+    const candleCount = this.db.prepare('SELECT COUNT(*) AS count FROM candles').get().count;
+    const signalCount = this.db.prepare('SELECT COUNT(*) AS count FROM signals').get().count;
+    const orderCount = this.db.prepare('SELECT COUNT(*) AS count FROM orders').get().count;
+    const latestSignals = await this.getRecentSignals({ limit: 5 });
+    const latestOrders = await this.getRecentOrders({ limit: 5 });
+    const latestQuota = this.db.prepare('SELECT * FROM quota_metrics ORDER BY id DESC LIMIT 5').all();
+
+    return {
+      db: { kind: 'sqlite', path: this.path },
+      counts: { candleCount, signalCount, orderCount },
+      latestSignals,
+      latestOrders,
+      latestQuota,
+    };
+  }
+}
