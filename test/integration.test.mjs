@@ -22,7 +22,11 @@ test('simulation persists signals, candles, and quota metrics', async () => {
 
   assert.ok(snapshot.counts.candleCount > 0);
   assert.ok(snapshot.counts.signalCount > 0);
+  assert.ok(snapshot.counts.decisionCount > 0);
+  assert.ok(snapshot.counts.portfolioSnapshotCount > 0);
   assert.ok(snapshot.latestQuota.length > 0);
+  assert.ok(snapshot.latestSignals[0].risk_state);
+  assert.ok(snapshot.latestDecisions.length > 0);
   assert.ok(Number.isFinite(result.metrics.cacheHitRatio));
 
   await storage.close();

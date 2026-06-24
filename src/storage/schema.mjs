@@ -31,7 +31,11 @@ export const schema = {
       current_weight REAL NOT NULL,
       trigger REAL NOT NULL,
       drawdown REAL NOT NULL,
-      quota_hit INTEGER NOT NULL
+      quota_hit INTEGER NOT NULL,
+      regime_momentum REAL NOT NULL DEFAULT 0,
+      regime_mean_reversion REAL NOT NULL DEFAULT 0,
+      regime_volatility REAL NOT NULL DEFAULT 0,
+      risk_state TEXT NOT NULL DEFAULT 'OK'
     )
   `,
   orders: `
@@ -58,4 +62,48 @@ export const schema = {
       cache_hit_ratio REAL NOT NULL
     )
   `,
+  decisions: `
+    CREATE TABLE IF NOT EXISTS decisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      target_weight REAL NOT NULL,
+      current_weight REAL NOT NULL,
+      deviation REAL NOT NULL,
+      trigger REAL NOT NULL,
+      notional_delta REAL NOT NULL,
+      executed INTEGER NOT NULL,
+      reason TEXT NOT NULL
+    )
+  `,
+  portfolioSnapshots: `
+    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      nav REAL NOT NULL,
+      cash REAL NOT NULL,
+      peak_nav REAL NOT NULL,
+      drawdown REAL NOT NULL
+    )
+  `,
+  positions: `
+    CREATE TABLE IF NOT EXISTS positions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      units REAL NOT NULL,
+      price REAL NOT NULL,
+      market_value REAL NOT NULL,
+      weight REAL NOT NULL
+    )
+  `,
+};
+
+export const migrations = {
+  signalColumns: [
+    `ALTER TABLE signals ADD COLUMN regime_momentum REAL NOT NULL DEFAULT 0`,
+    `ALTER TABLE signals ADD COLUMN regime_mean_reversion REAL NOT NULL DEFAULT 0`,
+    `ALTER TABLE signals ADD COLUMN regime_volatility REAL NOT NULL DEFAULT 0`,
+    `ALTER TABLE signals ADD COLUMN risk_state TEXT NOT NULL DEFAULT 'OK'`,
+  ],
 };

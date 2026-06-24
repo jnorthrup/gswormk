@@ -1,4 +1,4 @@
-import { schema } from './schema.mjs';
+import { migrations, schema } from './schema.mjs';
 
 export class DuckDbStorage {
   constructor({ path }) {
@@ -21,6 +21,18 @@ export class DuckDbStorage {
     await this.exec(schema.signals.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
     await this.exec(schema.orders.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
     await this.exec(schema.quotaMetrics.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
+    await this.exec(schema.decisions.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
+    await this.exec(schema.portfolioSnapshots.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
+    await this.exec(schema.positions.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
+    for (const statement of migrations.signalColumns) {
+      try {
+        await this.exec(statement);
+      } catch (error) {
+        if (!String(error.message).toLowerCase().includes('column with name') && !String(error.message).toLowerCase().includes('duplicate')) {
+          throw error;
+        }
+      }
+    }
   }
 
   async close() {
@@ -56,11 +68,13 @@ export class DuckDbStorage {
       INSERT INTO signals (
         timestamp, symbol, mid, spread, effective_cost, obi, innovation_z, rv_down,
         tail_dependence, alignment, cache_quality, effective_drift, target_weight,
-        current_weight, trigger, drawdown, quota_hit
+        current_weight, trigger, drawdown, quota_hit, regime_momentum,
+        regime_mean_reversion, regime_volatility, risk_state
       ) VALUES (
         '${escapeSql(signal.timestamp)}', '${escapeSql(signal.symbol)}', ${signal.mid}, ${signal.spread}, ${signal.effectiveCost}, ${signal.obi},
         ${signal.innovationZ}, ${signal.rvDown}, ${signal.tailDependence}, ${signal.alignment}, ${signal.cacheQuality},
-        ${signal.effectiveDrift}, ${signal.targetWeight}, ${signal.currentWeight}, ${signal.trigger}, ${signal.drawdown}, ${signal.quotaHit}
+        ${signal.effectiveDrift}, ${signal.targetWeight}, ${signal.currentWeight}, ${signal.trigger}, ${signal.drawdown}, ${signal.quotaHit},
+        ${signal.regimeMomentum}, ${signal.regimeMeanReversion}, ${signal.regimeVolatility}, '${escapeSql(signal.riskState)}'
       )
     `);
   }
@@ -79,6 +93,27 @@ export class DuckDbStorage {
     `);
   }
 
+  async insertDecision(decision) {
+    await this.exec(`
+      INSERT INTO decisions (timestamp, symbol, target_weight, current_weight, deviation, trigger, notional_delta, executed, reason)
+      VALUES ('${escapeSql(decision.timestamp)}', '${escapeSql(decision.symbol)}', ${decision.targetWeight}, ${decision.currentWeight}, ${decision.deviation}, ${decision.trigger}, ${decision.notionalDelta}, ${decision.executed ? 1 : 0}, '${escapeSql(decision.reason)}')
+    `);
+  }
+
+  async insertPortfolioSnapshot(snapshot) {
+    await this.exec(`
+      INSERT INTO portfolio_snapshots (timestamp, nav, cash, peak_nav, drawdown)
+      VALUES ('${escapeSql(snapshot.timestamp)}', ${snapshot.nav}, ${snapshot.cash}, ${snapshot.peakNav}, ${snapshot.drawdown})
+    `);
+    await this.exec(`DELETE FROM positions WHERE timestamp='${escapeSql(snapshot.timestamp)}'`);
+    for (const position of snapshot.positions) {
+      await this.exec(`
+        INSERT INTO positions (timestamp, symbol, units, price, market_value, weight)
+        VALUES ('${escapeSql(snapshot.timestamp)}', '${escapeSql(position.symbol)}', ${position.units}, ${position.price}, ${position.marketValue}, ${position.weight})
+      `);
+    }
+  }
+
   async getRecentSignals({ limit }) {
     return this.all(`SELECT * FROM signals ORDER BY id DESC LIMIT ${Number(limit)}`);
   }
@@ -87,16 +122,47 @@ export class DuckDbStorage {
     return this.all(`SELECT * FROM orders ORDER BY id DESC LIMIT ${Number(limit)}`);
   }
 
+  async getRecentDecisions({ limit }) {
+    return this.all(`SELECT * FROM decisions ORDER BY id DESC LIMIT ${Number(limit)}`);
+  }
+
+  async getLatestPortfolioSnapshot() {
+    return (await this.all('SELECT * FROM portfolio_snapshots ORDER BY id DESC LIMIT 1'))[0] ?? null;
+  }
+
+  async getLatestPositions() {
+    const latest = await this.getLatestPortfolioSnapshot();
+    if (!latest) return [];
+    return this.all(`SELECT * FROM positions WHERE timestamp='${escapeSql(latest.timestamp)}' ORDER BY market_value DESC`);
+  }
+
+  async getLatestQuotaSummary() {
+    return (await this.all(`
+      SELECT
+        MAX(cache_hits) AS cacheHits,
+        MAX(api_calls) AS apiCalls,
+        MAX(gap_count) AS gapCount,
+        MAX(cache_hit_ratio) AS cacheHitRatio
+      FROM quota_metrics
+    `))[0] ?? null;
+  }
+
   async getStatusSnapshot() {
     const candleCount = (await this.all('SELECT COUNT(*) AS count FROM candles'))[0]?.count ?? 0;
     const signalCount = (await this.all('SELECT COUNT(*) AS count FROM signals'))[0]?.count ?? 0;
     const orderCount = (await this.all('SELECT COUNT(*) AS count FROM orders'))[0]?.count ?? 0;
+    const decisionCount = (await this.all('SELECT COUNT(*) AS count FROM decisions'))[0]?.count ?? 0;
+    const portfolioSnapshotCount = (await this.all('SELECT COUNT(*) AS count FROM portfolio_snapshots'))[0]?.count ?? 0;
     return {
       db: { kind: 'duckdb', path: this.path },
-      counts: { candleCount, signalCount, orderCount },
+      counts: { candleCount, signalCount, orderCount, decisionCount, portfolioSnapshotCount },
       latestSignals: await this.getRecentSignals({ limit: 5 }),
       latestOrders: await this.getRecentOrders({ limit: 5 }),
+      latestDecisions: await this.getRecentDecisions({ limit: 5 }),
       latestQuota: await this.all('SELECT * FROM quota_metrics ORDER BY id DESC LIMIT 5'),
+      latestPortfolio: await this.getLatestPortfolioSnapshot(),
+      latestPositions: await this.getLatestPositions(),
+      latestQuotaSummary: await this.getLatestQuotaSummary(),
     };
   }
 }

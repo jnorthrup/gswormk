@@ -7,6 +7,7 @@ import { createStorage } from './storage/index.mjs';
 import { TraderEngine } from './trader/engine.mjs';
 import { ReplayFeed } from './feeds/replay-feed.mjs';
 import { defaultConfig } from './trader/config.mjs';
+import { renderSimulationReport, renderStatusReport } from './trader/reporting.mjs';
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -38,9 +39,13 @@ async function main() {
 
     const engine = new TraderEngine({ storage, config });
     const summary = await engine.run(feed);
+    console.log(renderSimulationReport(summary));
+    console.log('\n--- json ---');
     console.log(JSON.stringify(summary, null, 2));
   } else if (command === 'status') {
     const snapshot = await storage.getStatusSnapshot();
+    console.log(renderStatusReport(snapshot));
+    console.log('\n--- json ---');
     console.log(JSON.stringify(snapshot, null, 2));
   } else {
     console.error(`Unknown command: ${command}`);

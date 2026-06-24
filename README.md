@@ -8,6 +8,10 @@ Standalone Node.js console app that implements the quant trader architecture dis
 - BTC tail-dependence discount
 - cubic no-trade band from transaction friction vs downside variance
 - draw-through candle cache
+- model-alignment gating between live incremental state and cache replay state
+- continuous regime vector: momentum, mean reversion, volatility
+- portfolio optimizer across the full symbol set
+- risk invariants, portfolio snapshots, decision log, position ledger
 - paper broker execution
 - pluggable storage backend: SQLite by default, DuckDB when installed
 
@@ -56,9 +60,11 @@ The app simulates an event-time trading loop:
 1. Generates market and book events for BTC-USD and ETH-USD
 2. Updates canonical candle cache through a draw-through cache manager
 3. Computes signal state
-4. Computes target weights and no-trade bands
-5. Routes paper orders through a simulated broker
-6. Persists candles, signal snapshots, fills, and quota metrics
+4. Builds regime vector and alignment/cache confidence
+5. Optimizes portfolio weights jointly across symbols
+6. Applies drawdown and concentration risk invariants
+7. Routes paper orders through a simulated broker
+8. Persists candles, signal snapshots, decisions, fills, position ledger, portfolio snapshots, and quota metrics
 
 ## Commands
 

@@ -9,12 +9,13 @@ import {
   induceTrigger,
   kalmanStep,
   quotaQuality,
-  rollingVolatility,
   synthesizeDrift,
   urgencyFromInnovation,
 } from './signals.mjs';
 import { PaperBroker } from './paper-broker.mjs';
 import { DrawThroughCacheManager } from './cache-manager.mjs';
+import { buildDecisionVector, derivePortfolioTargets } from './optimizer.mjs';
+import { applyRiskInvariants, classifyRiskState, computeDrawdown } from './risk.mjs';
 
 export class TraderEngine {
   constructor({ storage, config }) {
@@ -49,106 +50,191 @@ export class TraderEngine {
   }
 
   async run(feed) {
-    for await (const event of feed.stream()) {
-      await this.processEvent(event);
+    for await (const batch of this.batchFeed(feed.stream())) {
+      await this.processBatch(batch);
     }
 
-    const portfolio = this.broker.getPortfolio(this.state.prices);
+    const portfolio = this.enrichedPortfolio();
     const recentSignals = await this.storage.getRecentSignals({ limit: 5 });
     const recentOrders = await this.storage.getRecentOrders({ limit: 5 });
+    const recentDecisions = await this.storage.getRecentDecisions({ limit: 5 });
 
     return {
       portfolio,
+      positions: portfolio.positions,
       metrics: {
         ...this.state.metrics,
         cacheHitRatio: round(this.state.metrics.cacheHits / Math.max(1, this.state.metrics.cacheHits + this.state.metrics.apiCalls), 4),
       },
-      recentSignals,
-      recentOrders,
+      latestSignals: recentSignals,
+      latestOrders: recentOrders,
+      latestDecisions: recentDecisions,
     };
   }
 
-  async processEvent(event) {
-    const symbolState = this.ensureSymbolState(event.symbol, event.last);
-    const previousPrice = symbolState.lastPrice;
-    const simpleReturn = previousPrice > 0 ? (event.last / previousPrice) - 1 : 0;
-
-    symbolState.returns.push(simpleReturn);
-    if (symbolState.returns.length > this.config.semivarianceWindow) {
-      symbolState.returns.shift();
+  async *batchFeed(stream) {
+    let buffer = [];
+    let currentTimestamp = null;
+    for await (const event of stream) {
+      if (currentTimestamp === null || currentTimestamp === event.timestamp) {
+        currentTimestamp = event.timestamp;
+        buffer.push(event);
+        continue;
+      }
+      yield buffer;
+      buffer = [event];
+      currentTimestamp = event.timestamp;
     }
+    if (buffer.length > 0) yield buffer;
+  }
 
-    if (event.symbol === 'BTC-USD') {
-      for (const state of this.state.perSymbol.values()) {
-        state.btcReturns.push(simpleReturn);
-        if (state.btcReturns.length > this.config.tailWindow) {
-          state.btcReturns.shift();
+  async processBatch(events) {
+    const signals = [];
+    const timestamp = events[0].timestamp;
+
+    for (const event of events) {
+      const symbolState = this.ensureSymbolState(event.symbol, event.last);
+      const previousPrice = symbolState.lastPrice;
+      const simpleReturn = previousPrice > 0 ? (event.last / previousPrice) - 1 : 0;
+
+      symbolState.returns.push(simpleReturn);
+      if (symbolState.returns.length > this.config.semivarianceWindow) {
+        symbolState.returns.shift();
+      }
+
+      if (event.symbol === 'BTC-USD') {
+        for (const state of this.state.perSymbol.values()) {
+          state.btcReturns.push(simpleReturn);
+          if (state.btcReturns.length > this.config.tailWindow) {
+            state.btcReturns.shift();
+          }
         }
       }
+
+      const cacheResult = await this.cache.loadRecentCandles({
+        symbol: event.symbol,
+        limit: 120,
+        eventTimestamp: event.timestamp,
+        buildCandle: () => this.toCandle(event),
+      });
+
+      if (cacheResult.cacheHit) {
+        this.state.metrics.cacheHits += 1;
+      } else {
+        this.state.metrics.apiCalls += 1;
+      }
+      this.state.metrics.gaps += cacheResult.gapCount;
+
+      const signal = this.computeSignal({ event, symbolState, cacheResult });
+      signals.push(signal);
+
+      this.state.prices[event.symbol] = event.last;
+      symbolState.lastPrice = event.last;
+      symbolState.kalman = signal.kalmanState;
     }
 
-    const cacheResult = await this.cache.loadRecentCandles({
-      symbol: event.symbol,
-      limit: 120,
-      eventTimestamp: event.timestamp,
-      buildCandle: () => this.toCandle(event),
+    const targets = derivePortfolioTargets({
+      signals,
+      reinvestPct: this.config.reinvestPct,
+      maxPositionPct: this.config.maxPositionPct,
     });
 
-    if (cacheResult.cacheHit) {
-      this.state.metrics.cacheHits += 1;
-    } else {
-      this.state.metrics.apiCalls += 1;
+    const portfolioBefore = this.enrichedPortfolio();
+    const drawdownBefore = computeDrawdown({ nav: portfolioBefore.nav, peakNav: this.state.peakNav });
+    const riskEnvelope = applyRiskInvariants({
+      targets,
+      drawdown: drawdownBefore,
+      maxDrawdownPct: this.config.maxDrawdownPct,
+      maxPositionPct: this.config.maxPositionPct,
+    });
+
+    for (const signal of signals) {
+      const constrainedTarget = riskEnvelope.constrained.get(signal.symbol) ?? 0;
+      const decision = await this.rebalance({
+        event: signal.event,
+        signal,
+        targetWeight: constrainedTarget,
+      });
+
+      const portfolio = this.enrichedPortfolio();
+      this.state.peakNav = Math.max(this.state.peakNav, portfolio.nav);
+      const drawdown = computeDrawdown({ nav: portfolio.nav, peakNav: this.state.peakNav });
+      const riskState = classifyRiskState({
+        drawdown,
+        maxDrawdownPct: this.config.maxDrawdownPct,
+        currentWeight: this.currentWeight(signal.symbol, signal.event.last),
+        maxPositionPct: this.config.maxPositionPct,
+      });
+
+      await this.storage.insertSignal({
+        timestamp,
+        symbol: signal.symbol,
+        mid: signal.event.mid,
+        spread: signal.spread,
+        effectiveCost: signal.effectiveCost,
+        obi: signal.obi,
+        innovationZ: signal.innovationZ,
+        rvDown: signal.rvDown,
+        tailDependence: signal.tailDependence,
+        alignment: signal.alignment,
+        cacheQuality: signal.cacheQuality,
+        effectiveDrift: signal.effectiveDrift,
+        targetWeight: constrainedTarget,
+        currentWeight: signal.currentWeight,
+        trigger: signal.trigger,
+        drawdown,
+        quotaHit: signal.cacheHit ? 1 : 0,
+        regimeMomentum: signal.regime.momentum,
+        regimeMeanReversion: signal.regime.meanReversion,
+        regimeVolatility: signal.regime.volatility,
+        riskState,
+      });
+
+      await this.storage.insertQuotaMetric({
+        timestamp,
+        symbol: signal.symbol,
+        cacheHits: this.state.metrics.cacheHits,
+        apiCalls: this.state.metrics.apiCalls,
+        gapCount: this.state.metrics.gaps,
+        cacheHitRatio: this.state.metrics.cacheHits / Math.max(1, this.state.metrics.cacheHits + this.state.metrics.apiCalls),
+      });
+
+      const decisionVector = buildDecisionVector({
+        signal,
+        targetWeight: constrainedTarget,
+        currentWeight: signal.currentWeight,
+      });
+      await this.storage.insertDecision({
+        timestamp,
+        symbol: signal.symbol,
+        targetWeight: constrainedTarget,
+        currentWeight: signal.currentWeight,
+        deviation: decisionVector.deviation,
+        trigger: signal.trigger,
+        notionalDelta: decision?.notionalDelta ?? decisionVector.deviation * portfolio.nav,
+        executed: Boolean(decision?.accepted),
+        reason: decision?.reason ?? (decisionVector.shouldTrade ? 'ORDER_REJECTED' : 'INSIDE_NO_TRADE_BAND'),
+      });
+
+      if (decision?.accepted) {
+        this.state.metrics.ordersAccepted += 1;
+        await this.storage.insertOrder(decision);
+      } else if (decision) {
+        this.state.metrics.ordersRejected += 1;
+      }
+
+      await this.storage.upsertCandles([this.toCandle(signal.event)]);
     }
-    this.state.metrics.gaps += cacheResult.gapCount;
 
-    const signal = this.computeSignal({ event, symbolState, cacheResult });
-    const order = this.rebalance({ event, signal });
-
-    this.state.prices[event.symbol] = event.last;
-    symbolState.lastPrice = event.last;
-    symbolState.kalman = signal.kalmanState;
-
-    const portfolio = this.broker.getPortfolio(this.state.prices);
-    this.state.peakNav = Math.max(this.state.peakNav, portfolio.nav);
-    const drawdown = (this.state.peakNav - portfolio.nav) / this.state.peakNav;
-
-    await this.storage.insertSignal({
-      timestamp: event.timestamp,
-      symbol: event.symbol,
-      mid: event.mid,
-      spread: signal.spread,
-      effectiveCost: signal.effectiveCost,
-      obi: signal.obi,
-      innovationZ: signal.innovationZ,
-      rvDown: signal.rvDown,
-      tailDependence: signal.tailDependence,
-      alignment: signal.alignment,
-      cacheQuality: signal.cacheQuality,
-      effectiveDrift: signal.effectiveDrift,
-      targetWeight: signal.targetWeight,
-      currentWeight: signal.currentWeight,
-      trigger: signal.trigger,
-      drawdown,
-      quotaHit: cacheResult.cacheHit ? 1 : 0,
+    const portfolioAfter = this.enrichedPortfolio();
+    await this.storage.insertPortfolioSnapshot({
+      timestamp,
+      nav: portfolioAfter.nav,
+      cash: portfolioAfter.cash,
+      peakNav: this.state.peakNav,
+      drawdown: portfolioAfter.drawdown,
+      positions: portfolioAfter.positions,
     });
-
-    await this.storage.insertQuotaMetric({
-      timestamp: event.timestamp,
-      symbol: event.symbol,
-      cacheHits: this.state.metrics.cacheHits,
-      apiCalls: this.state.metrics.apiCalls,
-      gapCount: this.state.metrics.gaps,
-      cacheHitRatio: this.state.metrics.cacheHits / Math.max(1, this.state.metrics.cacheHits + this.state.metrics.apiCalls),
-    });
-
-    if (order?.accepted) {
-      this.state.metrics.ordersAccepted += 1;
-      await this.storage.insertOrder(order);
-    } else if (order && !order.accepted) {
-      this.state.metrics.ordersRejected += 1;
-    }
-
-    await this.storage.upsertCandles([this.toCandle(event)]);
   }
 
   computeSignal({ event, symbolState, cacheResult }) {
@@ -180,9 +266,16 @@ export class TraderEngine {
     const effectiveDrift = synthesizeDrift({ obi, innovationZ: kalman.innovationZ, alignment, cacheQuality });
     const rawKelly = induceKelly({ effectiveDrift, rvDown: annualizedRvDown, tailDependence });
     const currentWeight = this.currentWeight(event.symbol, event.last);
-    const targetWeight = this.targetWeight(rawKelly, event.symbol);
+    const regime = {
+      momentum: Math.max(-1, Math.min(1, kalman.innovationZ / 5)),
+      meanReversion: Math.max(-1, Math.min(1, -obi)),
+      volatility: Math.max(0, Math.min(1, annualizedRvDown / 20)),
+    };
 
     return {
+      symbol: event.symbol,
+      event,
+      cacheHit: cacheResult.cacheHit,
       obi,
       innovationZ: kalman.innovationZ,
       kalmanState: kalman.state,
@@ -196,8 +289,8 @@ export class TraderEngine {
       effectiveDrift,
       rawKelly,
       currentWeight,
-      targetWeight,
       urgency: urgencyFromInnovation(kalman.innovationZ),
+      regime,
     };
   }
 
@@ -207,33 +300,33 @@ export class TraderEngine {
     return this.broker.getPositionValue(symbol, price) / portfolio.nav;
   }
 
-  targetWeight(rawKelly, symbol) {
-    const positiveKelly = Math.max(0, rawKelly);
-    const all = [...this.state.perSymbol.entries()].map(([entrySymbol, state]) => {
-      if (entrySymbol === symbol) return positiveKelly;
-      const price = this.state.prices[entrySymbol] ?? state.lastPrice;
-      const effectiveDrift = price > 0 ? ((price / state.lastPrice) - 1) : 0;
-      return Math.max(0, effectiveDrift * this.config.reinvestPct * 10);
-    });
-    const denominator = Math.max(1e-9, all.reduce((sum, value) => sum + value, 0));
-    return Math.min(this.config.maxPositionPct, this.config.reinvestPct * (positiveKelly / denominator));
-  }
-
-  rebalance({ event, signal }) {
+  async rebalance({ event, signal, targetWeight }) {
     const portfolio = this.broker.getPortfolio({ ...this.state.prices, [event.symbol]: event.last });
     const drawdown = (this.state.peakNav - portfolio.nav) / this.state.peakNav;
     if (drawdown > this.config.maxDrawdownPct) {
-      return null;
+      return {
+        accepted: false,
+        reason: 'DRAWDOWN_HALT',
+        notionalDelta: 0,
+      };
     }
 
-    const deltaWeight = signal.targetWeight - signal.currentWeight;
+    const deltaWeight = targetWeight - signal.currentWeight;
     if (Math.abs(deltaWeight) <= signal.trigger) {
-      return null;
+      return {
+        accepted: false,
+        reason: 'INSIDE_NO_TRADE_BAND',
+        notionalDelta: deltaWeight * portfolio.nav,
+      };
     }
 
     const notional = deltaWeight * portfolio.nav;
     if (Math.abs(notional) < this.config.minActionUsd) {
-      return null;
+      return {
+        accepted: false,
+        reason: 'MIN_NOTIONAL',
+        notionalDelta: notional,
+      };
     }
 
     const side = notional > 0 ? 'BUY' : 'SELL';
@@ -245,13 +338,37 @@ export class TraderEngine {
       : Math.max(bestBid, event.mid - (urgency * (event.mid - bestBid)));
     const quantity = Math.abs(notional) / executionPrice;
 
-    return this.broker.execute({
+    const result = this.broker.execute({
       symbol: event.symbol,
       side,
       quantity,
       price: executionPrice,
       timestamp: event.timestamp,
     });
+    return {
+      ...result,
+      reason: result.accepted ? 'EXECUTED' : result.reason,
+      notionalDelta: notional,
+    };
+  }
+
+  enrichedPortfolio() {
+    const portfolio = this.broker.getPortfolio(this.state.prices);
+    const drawdown = computeDrawdown({ nav: portfolio.nav, peakNav: this.state.peakNav });
+    const positions = Object.entries(portfolio.positions).map(([symbol, position]) => ({
+      symbol,
+      units: position.units,
+      price: position.price,
+      marketValue: position.marketValue,
+      weight: portfolio.nav > 0 ? position.marketValue / portfolio.nav : 0,
+    })).filter((position) => Math.abs(position.units) > 1e-9);
+    return {
+      cash: portfolio.cash,
+      nav: portfolio.nav,
+      peakNav: this.state.peakNav,
+      drawdown,
+      positions,
+    };
   }
 
   toCandle(event) {
