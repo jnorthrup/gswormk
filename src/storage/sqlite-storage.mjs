@@ -16,6 +16,19 @@ export class SQLiteStorage {
     this.db.exec(schema.decisions);
     this.db.exec(schema.portfolioSnapshots);
     this.db.exec(schema.positions);
+    try {
+      const info = this.db.prepare("PRAGMA table_info(spot_market_stats)").all();
+      const pkCols = info.filter(col => col.pk > 0).map(col => col.name).sort();
+      const expectedPkCols = ['symbol', 'updated_at'].sort();
+      const isMatch = pkCols.length === expectedPkCols.length && pkCols.every((v, i) => v === expectedPkCols[i]);
+      if (pkCols.length > 0 && !isMatch) {
+        console.log('[SQLite] Migration: spot_market_stats primary key mismatch. Dropping and recreating...');
+        this.db.exec("DROP TABLE IF EXISTS spot_market_stats");
+      }
+    } catch (e) {
+      // Ignore if table doesn't exist yet
+    }
+    this.db.exec(schema.spotMarketStats);
     for (const statement of migrations.signalColumns) {
       try {
         this.db.exec(statement);
@@ -58,7 +71,17 @@ export class SQLiteStorage {
     }
   }
 
-  async getRecentCandles({ symbol, limit }) {
+  async getRecentCandles({ symbol, limit, granularity }) {
+    if (granularity) {
+      const statement = this.db.prepare(`
+        SELECT symbol, granularity, start, open, high, low, close, volume
+        FROM candles
+        WHERE symbol = ? AND granularity = ?
+        ORDER BY start DESC
+        LIMIT ?
+      `);
+      return statement.all(symbol, granularity, limit);
+    }
     const statement = this.db.prepare(`
       SELECT symbol, granularity, start, open, high, low, close, volume
       FROM candles
@@ -75,8 +98,8 @@ export class SQLiteStorage {
         timestamp, symbol, mid, spread, effective_cost, obi, innovation_z, rv_down,
         tail_dependence, alignment, cache_quality, effective_drift, target_weight,
         current_weight, trigger, drawdown, quota_hit, regime_momentum,
-        regime_mean_reversion, regime_volatility, risk_state
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        regime_mean_reversion, regime_volatility, risk_state, dominant_regime
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     statement.run(
@@ -101,6 +124,7 @@ export class SQLiteStorage {
       signal.regimeMeanReversion,
       signal.regimeVolatility,
       signal.riskState,
+      signal.dominantRegime || 'meanReversion',
     );
   }
 
@@ -228,5 +252,50 @@ export class SQLiteStorage {
       latestPositions,
       latestQuotaSummary,
     };
+  }
+
+  async upsertSpotMarketStats(stat) {
+    const statement = this.db.prepare(`
+      INSERT INTO spot_market_stats (symbol, price, change_24h, rsi_1d, rsi_1h, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(symbol, updated_at)
+      DO UPDATE SET
+        price = excluded.price,
+        change_24h = excluded.change_24h,
+        rsi_1d = excluded.rsi_1d,
+        rsi_1h = excluded.rsi_1h
+    `);
+    statement.run(
+      stat.symbol,
+      stat.price,
+      stat.change24h,
+      stat.rsi1d,
+      stat.rsi1h,
+      stat.updatedAt
+    );
+  }
+
+  async getRecentSpotMarketStats({ symbol, limit }) {
+    const statement = this.db.prepare(`
+      SELECT symbol, price, change_24h, rsi_1d, rsi_1h, updated_at
+      FROM spot_market_stats
+      WHERE symbol = ?
+      ORDER BY updated_at DESC
+      LIMIT ?
+    `);
+    const rows = statement.all(symbol, limit);
+    return rows.map((r) => ({
+      symbol: r.symbol,
+      price: r.price,
+      change24h: r.change_24h,
+      rsi1d: r.rsi_1d,
+      rsi1h: r.rsi_1h,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  async getSpotMarketStats() {
+    const statement = this.db.prepare('SELECT * FROM spot_market_stats ORDER BY symbol ASC');
+    return statement.all();
   }
 }

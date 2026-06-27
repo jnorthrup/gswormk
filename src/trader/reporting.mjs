@@ -5,6 +5,10 @@ export function renderSimulationReport(summary) {
   lines.push('=== trader-console simulation report ===');
   lines.push(`nav=${round(summary.portfolio.nav, 2)} cash=${round(summary.portfolio.cash, 2)} peakNav=${round(summary.portfolio.peakNav, 2)} drawdown=${round(summary.portfolio.drawdown * 100, 2)}%`);
   lines.push(`orders accepted=${summary.metrics.ordersAccepted} rejected=${summary.metrics.ordersRejected} cacheHitRatio=${round(summary.metrics.cacheHitRatio * 100, 2)}% apiCalls=${summary.metrics.apiCalls}`);
+  if (summary.metrics.codec) {
+    const c = summary.metrics.codec;
+    lines.push(`codec tracking: guesses=${c.guessCount} virtualPnL=$${round(c.totalVirtualPnL, 2)} limit_fills=${c.filledLimitCount} limit_expired=${c.expiredLimitCount}`);
+  }
   lines.push('');
   lines.push('positions:');
   lines.push('symbol      units           price           marketValue     weight');

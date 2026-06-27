@@ -14,7 +14,13 @@ export function defaultConfig(overrides = {}) {
     tailQuantile: 0.05,
     kalmanQ: 0.05,
     kalmanR: 4,
-    cacheFreshnessMs: 2 * 60_000,
+    useSnareGrid: overrides.useSnareGrid ?? false,
+    useConfidenceGating: overrides.useConfidenceGating ?? false,
+    fibLevels: overrides.fibLevels ?? [0.382, 0.500, 0.618],
+    profitTargetPct: overrides.profitTargetPct ?? 0.02,
+    stopLossPct: overrides.stopLossPct ?? 0.015,
+    stopDurationMs: overrides.stopDurationMs ?? 900000,
+    snareDurationMs: overrides.snareDurationMs ?? 900000,
     ...overrides,
   };
 }

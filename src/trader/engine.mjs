@@ -11,18 +11,20 @@ import {
   quotaQuality,
   synthesizeDrift,
   urgencyFromInnovation,
+  computeRsiSplatAndKalman,
 } from './signals.mjs';
 import { PaperBroker } from './paper-broker.mjs';
 import { DrawThroughCacheManager } from './cache-manager.mjs';
 import { buildDecisionVector, derivePortfolioTargets } from './optimizer.mjs';
 import { applyRiskInvariants, classifyRiskState, computeDrawdown } from './risk.mjs';
+import { CoinMarketCapScraper } from '../feeds/coinmarketcap-scraper.mjs';
 
 export class TraderEngine {
   constructor({ storage, config }) {
     this.storage = storage;
     this.config = config;
-    this.broker = new PaperBroker({ initialCash: config.initialCash });
-    this.cache = new DrawThroughCacheManager({ storage, freshnessMs: config.cacheFreshnessMs });
+    this.broker = new PaperBroker({ initialCash: config.initialCash, persistPath: config.paperWalletPath });
+    this.cache = new DrawThroughCacheManager({ storage, freshnessMs: config.cacheFreshnessMs, restClient: config.restClient });
     this.state = {
       perSymbol: new Map(),
       prices: {},
@@ -33,6 +35,9 @@ export class TraderEngine {
         gaps: 0,
         ordersAccepted: 0,
         ordersRejected: 0,
+      },
+      ioStats: {
+        evalDurationMs: [],
       },
     };
   }
@@ -49,7 +54,96 @@ export class TraderEngine {
     return this.state.perSymbol.get(symbol);
   }
 
+  async warmup() {
+    console.log('[Engine] Warming up symbol states from database history...');
+    const lookback = (this.config.semivarianceWindow || 120) + 1;
+    const tailLookback = (this.config.tailWindow || 180) + 1;
+
+    for (const symbol of this.config.symbols) {
+      let candles = await this.storage.getRecentCandles({ symbol, limit: lookback });
+      
+      if (candles.length <= 1 && this.config.restClient) {
+        try {
+          const now = Date.now();
+          const seconds = 60;
+          const start = new Date(now - (lookback * seconds * 1000)).toISOString();
+          const end = new Date(now).toISOString();
+          console.log(`[Engine] Cache cold for warmup on ${symbol}. Seeding from REST...`);
+          
+          await this.cache.loadRecentCandles({
+            symbol,
+            limit: lookback,
+            eventTimestamp: end,
+            buildCandle: () => ({}),
+            granularity: '1m',
+          });
+          
+          candles = await this.storage.getRecentCandles({ symbol, limit: lookback });
+        } catch (error) {
+          console.error(`[Engine] Warmup candle seeding failed for ${symbol}:`, error);
+        }
+      }
+
+      const state = this.ensureSymbolState(symbol, 0);
+
+      if (candles.length > 1) {
+        const sorted = [...candles].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+        state.lastPrice = Number(sorted[sorted.length - 1].close);
+        state.kalman = { x: state.lastPrice, p: 1 };
+
+        state.returns = [];
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const prev = Number(sorted[i].close);
+          const next = Number(sorted[i + 1].close);
+          const ret = prev > 0 ? (next / prev) - 1 : 0;
+          state.returns.push(ret);
+        }
+        console.log(`[Engine] Warmed up ${state.returns.length} returns for ${symbol}. Last price: $${state.lastPrice}`);
+      }
+    }
+
+    let btcCandles = await this.storage.getRecentCandles({ symbol: 'BTC-USD', limit: tailLookback });
+    
+    if (btcCandles.length <= 1 && this.config.restClient) {
+      try {
+        const now = Date.now();
+        const seconds = 60;
+        const start = new Date(now - (tailLookback * seconds * 1000)).toISOString();
+        const end = new Date(now).toISOString();
+        console.log(`[Engine] Seeding BTC-USD tail candles for warmup...`);
+        await this.cache.loadRecentCandles({
+          symbol: 'BTC-USD',
+          limit: tailLookback,
+          eventTimestamp: end,
+          buildCandle: () => ({}),
+          granularity: '1m',
+        });
+        btcCandles = await this.storage.getRecentCandles({ symbol: 'BTC-USD', limit: tailLookback });
+      } catch (error) {
+        console.error(`[Engine] Seeding BTC-USD tail candles failed:`, error);
+      }
+    }
+
+    if (btcCandles.length > 1) {
+      const sortedBtc = [...btcCandles].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+      const btcReturns = [];
+      for (let i = 0; i < sortedBtc.length - 1; i++) {
+        const prev = Number(sortedBtc[i].close);
+        const next = Number(sortedBtc[i + 1].close);
+        const ret = prev > 0 ? (next / prev) - 1 : 0;
+        btcReturns.push(ret);
+      }
+
+      for (const symbol of this.config.symbols) {
+        const state = this.ensureSymbolState(symbol, 0);
+        state.btcReturns = [...btcReturns].slice(-this.config.tailWindow);
+      }
+      console.log(`[Engine] Warmed up ${btcReturns.length} BTC returns for tail dependence.`);
+    }
+  }
+
   async run(feed) {
+    await this.warmup();
     for await (const batch of this.batchFeed(feed.stream())) {
       await this.processBatch(batch);
     }
@@ -65,11 +159,42 @@ export class TraderEngine {
       metrics: {
         ...this.state.metrics,
         cacheHitRatio: round(this.state.metrics.cacheHits / Math.max(1, this.state.metrics.cacheHits + this.state.metrics.apiCalls), 4),
+        codec: this.broker.getCodecMetrics(),
       },
       latestSignals: recentSignals,
       latestOrders: recentOrders,
       latestDecisions: recentDecisions,
     };
+  }
+
+  async runLive(feed) {
+    await this.warmup();
+    console.log('[Engine] Starting live trading loop...');
+    for await (const event of feed.stream()) {
+      console.log(`[Engine] Processing live event for ${event.symbol} at price $${event.last}`);
+      try {
+        const tStart = performance.now();
+        await this.processBatch([event]);
+        const tEnd = performance.now();
+        const evalTime = tEnd - tStart;
+
+        this.state.ioStats.evalDurationMs.push(evalTime);
+        if (this.state.ioStats.evalDurationMs.length > 50) {
+          this.state.ioStats.evalDurationMs.shift();
+        }
+
+        const avgEval = this.state.ioStats.evalDurationMs.reduce((a, b) => a + b, 0) / this.state.ioStats.evalDurationMs.length;
+
+        const portfolio = this.enrichedPortfolio();
+        console.log(`[Portfolio] NAV: $${portfolio.nav.toFixed(2)} | Cash: $${portfolio.cash.toFixed(2)} | Drawdown: ${(portfolio.drawdown * 100).toFixed(2)}%`);
+        if (portfolio.positions.length > 0) {
+          console.log('            Positions:', portfolio.positions.map(p => `${p.symbol}: ${p.units.toFixed(4)} (@$${p.price.toFixed(2)})`).join(', '));
+        }
+        console.log(`[I/O Stats] Process Time: ${evalTime.toFixed(1)}ms (Avg: ${avgEval.toFixed(1)}ms) | WS Queue Depth: ${feed.queue.length}`);
+      } catch (error) {
+        console.error('[Engine] Error processing live event:', error);
+      }
+    }
   }
 
   async *batchFeed(stream) {
@@ -116,6 +241,7 @@ export class TraderEngine {
         limit: 120,
         eventTimestamp: event.timestamp,
         buildCandle: () => this.toCandle(event),
+        granularity: this.config.granularity || '1m',
       });
 
       if (cacheResult.cacheHit) {
@@ -131,6 +257,14 @@ export class TraderEngine {
       this.state.prices[event.symbol] = event.last;
       symbolState.lastPrice = event.last;
       symbolState.kalman = signal.kalmanState;
+    }
+
+    const fills = this.broker.updatePendingOrders(this.state.prices, timestamp);
+    for (const fill of fills) {
+      if (!fill.validate_only) {
+        this.state.metrics.ordersAccepted += 1;
+        await this.storage.insertOrder(fill);
+      }
     }
 
     const targets = derivePortfolioTargets({
@@ -238,15 +372,21 @@ export class TraderEngine {
   }
 
   computeSignal({ event, symbolState, cacheResult }) {
-    const bestBid = event.bids[0].price;
-    const bestAsk = event.asks[0].price;
-    const obi = computeObi(event.bids, event.asks, event.mid);
+    const hasLiquidity = event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0;
+    const bestBid = hasLiquidity ? event.bids[0].price : 0;
+    const bestAsk = hasLiquidity ? event.asks[0].price : 0;
+    const obi = hasLiquidity ? computeObi(event.bids, event.asks, event.mid) : 0;
     const kalman = kalmanStep(symbolState.kalman, event.last, this.config.kalmanQ, this.config.kalmanR);
     const rvDown = computeDownsideSemivariance(symbolState.returns);
     const annualizedRvDown = Math.max(rvDown * this.config.annualizationFactor, 1e-9);
     const tailDependence = computeTailDependence(symbolState.returns, symbolState.btcReturns, this.config.tailQuantile);
-    const effectiveCost = computeEffectiveSpread(bestBid, bestAsk);
-    const trigger = induceTrigger(effectiveCost, annualizedRvDown);
+    const effectiveCost = hasLiquidity ? computeEffectiveSpread(bestBid, bestAsk) : 1.0;
+
+    const currentWeight = this.currentWeight(event.symbol, event.last);
+    let trigger = induceTrigger(effectiveCost, annualizedRvDown);
+    if (currentWeight === 0) {
+      trigger *= (this.config.zeroPositionTriggerMultiplier ?? 0.8);
+    }
 
     const replayReturns = cacheResult.candles.slice(0, this.config.semivarianceWindow - 1)
       .map((candle, index, rows) => {
@@ -264,13 +404,35 @@ export class TraderEngine {
     );
     const cacheQuality = quotaQuality({ cacheHit: cacheResult.cacheHit, gapCount: cacheResult.gapCount });
     const effectiveDrift = synthesizeDrift({ obi, innovationZ: kalman.innovationZ, alignment, cacheQuality });
-    const rawKelly = induceKelly({ effectiveDrift, rvDown: annualizedRvDown, tailDependence });
-    const currentWeight = this.currentWeight(event.symbol, event.last);
+    const rawKelly = hasLiquidity ? induceKelly({ effectiveDrift, rvDown: annualizedRvDown, tailDependence }) : 0;
     const regime = {
       momentum: Math.max(-1, Math.min(1, kalman.innovationZ / 5)),
       meanReversion: Math.max(-1, Math.min(1, -obi)),
       volatility: Math.max(0, Math.min(1, annualizedRvDown / 20)),
     };
+
+    const s_vol = regime.volatility;
+    const s_mom = Math.abs(regime.momentum);
+    const s_mr = Math.abs(regime.meanReversion);
+
+    const rankings = [
+      { name: 'volatility', score: s_vol },
+      { name: 'momentum', score: s_mom },
+      { name: 'meanReversion', score: s_mr }
+    ].sort((a, b) => b.score - a.score);
+
+    const dominantRegime = rankings[0].name;
+
+    let finalKelly = rawKelly;
+    let finalTrigger = trigger;
+
+    if (dominantRegime === 'volatility') {
+      finalTrigger *= 1.5;
+      finalKelly *= 0.5;
+    } else if (dominantRegime === 'momentum') {
+      finalTrigger *= 0.7;
+      finalKelly *= 1.2;
+    }
 
     return {
       symbol: event.symbol,
@@ -283,14 +445,15 @@ export class TraderEngine {
       tailDependence,
       effectiveCost,
       spread: (bestAsk - bestBid) / event.mid,
-      trigger,
+      trigger: finalTrigger,
       alignment,
       cacheQuality,
       effectiveDrift,
-      rawKelly,
+      rawKelly: finalKelly,
       currentWeight,
       urgency: urgencyFromInnovation(kalman.innovationZ),
       regime,
+      dominantRegime,
     };
   }
 
@@ -300,9 +463,136 @@ export class TraderEngine {
     return this.broker.getPositionValue(symbol, price) / portfolio.nav;
   }
 
+  manageSnareGrid(event, signal, portfolio) {
+    if (!this.config.useSnareGrid) return;
+
+    const guesses = this.broker.orders.concat(this.broker.pendingOrders)
+      .filter(o => o.product_id === event.symbol && o.validate_only);
+    const symbolConfidence = guesses.reduce((sum, o) => sum + (o.virtualPnL || 0), 0);
+
+    if (this.config.useConfidenceGating && symbolConfidence <= 0) {
+      const activeSnares = this.broker.pendingOrders.filter(
+        o => o.product_id === event.symbol && o.is_snare && o.status === 'PENDING'
+      );
+      for (const snare of activeSnares) {
+        this.broker.cancelOrder(snare.order_id);
+      }
+      return;
+    }
+
+    const sigmaDown = Math.sqrt(signal.rvDown);
+    const mid = event.mid;
+
+    let spacingMultiplier = 1.0;
+    if (signal.dominantRegime === 'volatility') {
+      spacingMultiplier = 1.3;
+    } else if (signal.dominantRegime === 'momentum') {
+      spacingMultiplier = 2.0;
+    }
+
+    for (const level of this.config.fibLevels) {
+      const snarePrice = mid * (1 - level * sigmaDown * spacingMultiplier);
+      const snareQty = (portfolio.nav * 0.05) / snarePrice;
+
+      const existing = this.broker.pendingOrders.find(
+        o => o.product_id === event.symbol && o.is_snare && o.fib_level === level && o.status === 'PENDING'
+      );
+
+      if (!existing) {
+        const end_time = new Date(Date.now() + this.config.snareDurationMs).toISOString();
+        const postResult = this.broker.postOrder({
+          product_id: event.symbol,
+          side: 'BUY',
+          validate_only: false,
+          timestamp: event.timestamp,
+          order_configuration: {
+            limit_limit_gtd: {
+              base_size: String(snareQty),
+              limit_price: String(snarePrice),
+              end_time,
+            },
+            auto_hedge: {
+              profit_target_pct: this.config.profitTargetPct,
+              stop_loss_pct: this.config.stopLossPct,
+              stop_duration_ms: this.config.stopDurationMs,
+            }
+          }
+        });
+        if (postResult.accepted) {
+          postResult.order.is_snare = true;
+          postResult.order.fib_level = level;
+          postResult.order.regime = signal.dominantRegime;
+        }
+      } else {
+        const drift = Math.abs(mid - existing.initialPrice) / mid;
+        const regimeChanged = existing.regime !== signal.dominantRegime;
+        if (drift > 0.03 || regimeChanged) {
+          this.broker.cancelOrder(existing.order_id);
+          const end_time = new Date(Date.now() + this.config.snareDurationMs).toISOString();
+          const postResult = this.broker.postOrder({
+            product_id: event.symbol,
+            side: 'BUY',
+            validate_only: false,
+            timestamp: event.timestamp,
+            order_configuration: {
+              limit_limit_gtd: {
+                base_size: String(snareQty),
+                limit_price: String(snarePrice),
+                end_time,
+              },
+              auto_hedge: {
+                profit_target_pct: this.config.profitTargetPct,
+                stop_loss_pct: this.config.stopLossPct,
+                stop_duration_ms: this.config.stopDurationMs,
+              }
+            }
+          });
+          if (postResult.accepted) {
+            postResult.order.is_snare = true;
+            postResult.order.fib_level = level;
+            postResult.order.regime = signal.dominantRegime;
+          }
+        }
+      }
+    }
+  }
+
   async rebalance({ event, signal, targetWeight }) {
     const portfolio = this.broker.getPortfolio({ ...this.state.prices, [event.symbol]: event.last });
     const drawdown = (this.state.peakNav - portfolio.nav) / this.state.peakNav;
+    // Post a validate_only virtual order to track codec tracking loss
+    const guessSide = signal.effectiveDrift > 0 ? 'BUY' : 'SELL';
+    const guessQuantity = 1000 / event.mid;
+    this.broker.postOrder({
+      product_id: event.symbol,
+      side: guessSide,
+      validate_only: true,
+      timestamp: event.timestamp,
+      order_configuration: {
+        limit_limit_gtc: {
+          base_size: String(guessQuantity),
+          limit_price: String(event.mid),
+        }
+      }
+    });
+
+    this.manageSnareGrid(event, signal, portfolio);
+
+    const guesses = this.broker.orders.concat(this.broker.pendingOrders)
+      .filter(o => o.product_id === event.symbol && o.validate_only);
+    const symbolConfidence = guesses.reduce((sum, o) => sum + (o.virtualPnL || 0), 0);
+    const currentUnits = this.broker.getUnits(event.symbol);
+    const isLiquidation = (targetWeight === 0 && currentUnits > 0);
+    const isConfidenceGated = this.config.useConfidenceGating && (symbolConfidence <= 0 && !isLiquidation);
+
+    if (isConfidenceGated) {
+      return {
+        accepted: false,
+        reason: 'CONFIDENCE_GATE_BLOCKED',
+        notionalDelta: 0,
+      };
+    }
+
     if (drawdown > this.config.maxDrawdownPct) {
       return {
         accepted: false,
@@ -338,16 +628,34 @@ export class TraderEngine {
       : Math.max(bestBid, event.mid - (urgency * (event.mid - bestBid)));
     const quantity = Math.abs(notional) / executionPrice;
 
-    const result = this.broker.execute({
-      symbol: event.symbol,
-      side,
-      quantity,
-      price: executionPrice,
-      timestamp: event.timestamp,
-    });
+    let result;
+    if (this.config.useLimitOrders) {
+      const end_time = new Date(Date.parse(event.timestamp) + (this.config.limitDurationMs || 60000)).toISOString();
+      result = this.broker.postOrder({
+        product_id: event.symbol,
+        side,
+        validate_only: false,
+        timestamp: event.timestamp,
+        order_configuration: {
+          limit_limit_gtd: {
+            base_size: String(quantity),
+            limit_price: String(executionPrice),
+            end_time,
+          }
+        }
+      });
+    } else {
+      result = this.broker.execute({
+        symbol: event.symbol,
+        side,
+        quantity,
+        price: executionPrice,
+        timestamp: event.timestamp,
+      });
+    }
     return {
       ...result,
-      reason: result.accepted ? 'EXECUTED' : result.reason,
+      reason: result.accepted ? (this.config.useLimitOrders ? 'LIMIT_POSTED' : 'EXECUTED') : result.reason,
       notionalDelta: notional,
     };
   }
@@ -382,5 +690,44 @@ export class TraderEngine {
       close: event.last,
       volume: event.volume,
     };
+  }
+
+  async getDenoisedRsi({ symbol, timestamp }) {
+    let stats = [];
+    try {
+      stats = await this.storage.getRecentSpotMarketStats({ symbol, limit: 30 });
+    } catch (err) {
+      console.warn(`[Engine] Failed to fetch spot market stats: ${err.message}`);
+    }
+
+    if (stats.length === 0) {
+      console.log(`[Engine] RSI cache miss for ${symbol} at ${timestamp}. Drawing through CoinMarketCap scraper...`);
+      try {
+        const scraper = new CoinMarketCapScraper({ storage: this.storage });
+        await scraper.scrapeRsiData();
+        stats = await this.storage.getRecentSpotMarketStats({ symbol, limit: 30 });
+      } catch (err) {
+        console.error(`[Engine] Scraper draw-through failed for ${symbol}:`, err.message);
+      }
+    }
+
+    const symbolState = this.ensureSymbolState(symbol, 0);
+    if (!symbolState.rsiKalman) {
+      symbolState.rsiKalman = { x: 50, p: 10 };
+    }
+
+    const res = computeRsiSplatAndKalman({
+      statsHistory: stats,
+      targetTimestamp: timestamp,
+      sigmaSeconds: 3600 * 2,
+      kalmanState: symbolState.rsiKalman,
+      q: 0.1,
+      r: 1.0,
+    });
+
+    if (res.rsi !== null) {
+      symbolState.rsiKalman = res.state;
+    }
+    return res;
   }
 }

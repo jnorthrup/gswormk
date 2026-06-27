@@ -35,7 +35,8 @@ export const schema = {
       regime_momentum REAL NOT NULL DEFAULT 0,
       regime_mean_reversion REAL NOT NULL DEFAULT 0,
       regime_volatility REAL NOT NULL DEFAULT 0,
-      risk_state TEXT NOT NULL DEFAULT 'OK'
+      risk_state TEXT NOT NULL DEFAULT 'OK',
+      dominant_regime TEXT NOT NULL DEFAULT 'meanReversion'
     )
   `,
   orders: `
@@ -97,6 +98,17 @@ export const schema = {
       weight REAL NOT NULL
     )
   `,
+  spotMarketStats: `
+    CREATE TABLE IF NOT EXISTS spot_market_stats (
+      symbol TEXT NOT NULL,
+      price REAL,
+      change_24h REAL,
+      rsi_1d REAL,
+      rsi_1h REAL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (symbol, updated_at)
+    )
+  `,
 };
 
 export const migrations = {
@@ -105,5 +117,6 @@ export const migrations = {
     `ALTER TABLE signals ADD COLUMN regime_mean_reversion REAL NOT NULL DEFAULT 0`,
     `ALTER TABLE signals ADD COLUMN regime_volatility REAL NOT NULL DEFAULT 0`,
     `ALTER TABLE signals ADD COLUMN risk_state TEXT NOT NULL DEFAULT 'OK'`,
+    `ALTER TABLE signals ADD COLUMN dominant_regime TEXT NOT NULL DEFAULT 'meanReversion'`,
   ],
 };

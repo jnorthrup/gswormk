@@ -3,9 +3,7 @@ import { clamp, EPSILON } from '../lib/math.mjs';
 export function derivePortfolioTargets({ signals, reinvestPct, maxPositionPct }) {
   const scored = signals.map((signal) => {
     const positiveKelly = Math.max(0, signal.rawKelly);
-    const systemicPenalty = 1 - Math.min(0.99, signal.tailDependence);
-    const regimeBoost = 1 + Math.max(-0.5, Math.min(0.5, signal.regime.momentum * 0.15));
-    const score = positiveKelly * systemicPenalty * regimeBoost;
+    const score = positiveKelly;
     return {
       symbol: signal.symbol,
       score: Math.max(0, score),

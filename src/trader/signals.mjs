@@ -25,6 +25,48 @@ export function kalmanStep({ x, p }, observedPrice, q, r) {
   };
 }
 
+export function computeRsiSplatAndKalman({ statsHistory, targetTimestamp, sigmaSeconds, kalmanState = { x: 50, p: 10 }, q = 0.1, r = 1 }) {
+  if (statsHistory.length === 0) return { rsi: null, state: kalmanState };
+
+  const targetMs = Date.parse(targetTimestamp);
+  const sigmaMs = sigmaSeconds * 1000;
+
+  // 1. Gaussian Splatting (Kernel smoothing)
+  let weightSum = 0;
+  let valueSum = 0;
+
+  for (const row of statsHistory) {
+    const rowMs = Date.parse(row.updatedAt);
+    const diff = targetMs - rowMs;
+    // Limit to 3 sigma for performance
+    if (Math.abs(diff) <= 3 * sigmaMs) {
+      const weight = Math.exp(-(diff * diff) / (2 * sigmaMs * sigmaMs));
+      // Support either rsi_1d or rsi_1h depending on availability
+      const rsiValue = row.rsi1d !== null ? row.rsi1d : row.rsi1h;
+      if (rsiValue !== null && !isNaN(rsiValue)) {
+        valueSum += rsiValue * weight;
+        weightSum += weight;
+      }
+    }
+  }
+
+  if (weightSum === 0) {
+    return { rsi: null, state: kalmanState };
+  }
+
+  const splattedRsi = valueSum / weightSum;
+
+  // 2. Kalman filter step
+  const kStep = kalmanStep(kalmanState, splattedRsi, q, r);
+
+  return {
+    rsi: kStep.state.x,
+    innovation: kStep.innovation,
+    innovationZ: kStep.innovationZ,
+    state: kStep.state,
+  };
+}
+
 export function computeTailDependence(assetReturns, btcReturns, q = 0.05) {
   const count = Math.min(assetReturns.length, btcReturns.length);
   if (count < 20) return 0;
@@ -66,7 +108,7 @@ export function alignmentScore(live, replay) {
   const varianceDelta = Math.abs(live.rvDown - replay.rvDown) / (Math.abs(replay.rvDown) + 1e-9);
   const tailDelta = Math.abs(live.tail - replay.tail) / (Math.abs(replay.tail) + 1e-9);
   const distance = (0.5 * driftDelta) + (0.3 * varianceDelta) + (0.2 * tailDelta);
-  return Math.max(0.2, Math.exp(-Math.min(distance, 4)));
+  return Math.exp(-distance);
 }
 
 export function quotaQuality({ cacheHit, gapCount }) {
@@ -79,7 +121,7 @@ export function synthesizeDrift({ obi, innovationZ, alignment, cacheQuality }) {
 }
 
 export function induceKelly({ effectiveDrift, rvDown, tailDependence }) {
-  return effectiveDrift / ((rvDown * (1 + tailDependence)) + EPSILON);
+  return (effectiveDrift / (rvDown + EPSILON)) * (1 - tailDependence);
 }
 
 export function urgencyFromInnovation(innovationZ) {

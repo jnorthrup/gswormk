@@ -24,6 +24,7 @@ export class DuckDbStorage {
     await this.exec(schema.decisions.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
     await this.exec(schema.portfolioSnapshots.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
     await this.exec(schema.positions.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY'));
+    await this.exec(schema.spotMarketStats);
     for (const statement of migrations.signalColumns) {
       try {
         await this.exec(statement);
@@ -59,7 +60,10 @@ export class DuckDbStorage {
     }
   }
 
-  async getRecentCandles({ symbol, limit }) {
+  async getRecentCandles({ symbol, limit, granularity }) {
+    if (granularity) {
+      return this.all(`SELECT * FROM candles WHERE symbol='${escapeSql(symbol)}' AND granularity='${escapeSql(granularity)}' ORDER BY start DESC LIMIT ${Number(limit)}`);
+    }
     return this.all(`SELECT * FROM candles WHERE symbol='${escapeSql(symbol)}' ORDER BY start DESC LIMIT ${Number(limit)}`);
   }
 
@@ -164,6 +168,43 @@ export class DuckDbStorage {
       latestPositions: await this.getLatestPositions(),
       latestQuotaSummary: await this.getLatestQuotaSummary(),
     };
+  }
+
+  async upsertSpotMarketStats(stat) {
+    await this.exec(`DELETE FROM spot_market_stats WHERE symbol='${escapeSql(stat.symbol)}' AND updated_at='${escapeSql(stat.updatedAt)}'`);
+    await this.exec(`
+      INSERT INTO spot_market_stats (symbol, price, change_24h, rsi_1d, rsi_1h, updated_at)
+      VALUES (
+        '${escapeSql(stat.symbol)}',
+        ${stat.price},
+        ${stat.change24h},
+        ${stat.rsi1d !== null ? stat.rsi1d : 'NULL'},
+        ${stat.rsi1h !== null ? stat.rsi1h : 'NULL'},
+        '${escapeSql(stat.updatedAt)}'
+      )
+    `);
+  }
+
+  async getRecentSpotMarketStats({ symbol, limit }) {
+    const rows = await this.all(`
+      SELECT symbol, price, change_24h, rsi_1d, rsi_1h, updated_at
+      FROM spot_market_stats
+      WHERE symbol='${escapeSql(symbol)}'
+      ORDER BY updated_at DESC
+      LIMIT ${Number(limit)}
+    `);
+    return rows.map((r) => ({
+      symbol: r.symbol,
+      price: r.price,
+      change24h: r.change_24h,
+      rsi1d: r.rsi_1d,
+      rsi1h: r.rsi_1h,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  async getSpotMarketStats() {
+    return this.all('SELECT * FROM spot_market_stats ORDER BY symbol ASC');
   }
 }
 
