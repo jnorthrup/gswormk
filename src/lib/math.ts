@@ -16,9 +16,9 @@ export function variance(values: readonly number[]): number {
 }
 
 export function downsideSemivariance(values: readonly number[]): number {
-  if (values.length <= 1) return 0;
-  // Target is 0 (downside risk = negative returns), not mean
-  return values.reduce((sum, value) => sum + Math.min(0, value) ** 2, 0) / (values.length - 1);
+  if (values.length <= 1) return 1e-9;
+  const result = values.reduce((sum, value) => sum + Math.min(0, value) ** 2, 0) / (values.length - 1);
+  return Math.max(result, 1e-9);
 }
 
 export function logistic(x: number): number {

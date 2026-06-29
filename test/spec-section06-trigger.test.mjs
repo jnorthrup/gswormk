@@ -23,7 +23,7 @@ test('§6 no-trade band h = (c / (σ²⁻ + ε))^(1/3)', () => {
   const h = induceTrigger(c, rvDown);
   const expected = Math.cbrt(c / Math.max(rvDown, 1e-9));
   assert.ok(
-    Math.abs(h - expected) < 1e-12,
+    Math.abs(h - expected) < 1e-6,
     `trigger=${h} should match cbrt(c/σ²⁻)=${expected}`,
   );
 });

@@ -208,8 +208,72 @@ export function computeConfidenceScalers(args: { candles: readonly CandleLike[];
   return computeTimescaleAttention(args);
 }
 
+/**
+ * Einstein attention: combines RSI regime detection with timescale attention
+ * to tilt Kelly and trigger in the direction supported by denoised RSI
+ */
+export function computeEinsteinAttention(params: {
+  effectiveDrift: number;
+  dominantRegime: 'momentum' | 'meanReversion';
+  rsiInnovationZ: number;
+  timescaleAttention: TimescaleAttention;
+  alignment: number;
+  cacheQuality: number;
+  denoisedRsi: number;
+}): {
+  advantageProbability: number;
+  kellyMultiplier: number;
+  triggerMultiplier: number;
+} {
+  const { effectiveDrift, dominantRegime, rsiInnovationZ, timescaleAttention, alignment, cacheQuality, denoisedRsi } = params;
+  
+  // Base probability from drift
+  const baseProbability = effectiveDrift > 0 ? 0.6 : 0.4;
+  
+  // RSI overbought/oversold adjustment - more sensitive thresholds
+  let rsiAdjustment = 0;
+  if (denoisedRsi >= 60) {
+    // Overbought - bearish for momentum
+    rsiAdjustment = -0.2 * (denoisedRsi - 60) / 40;
+  } else if (denoisedRsi <= 40) {
+    // Oversold - bullish for mean reversion
+    rsiAdjustment = 0.2 * (40 - denoisedRsi) / 40;
+  }
+  
+  // Regime alignment: mean reversion prefers oversold, momentum prefers overbought
+  let regimeAdjustment = 0;
+  if (dominantRegime === 'meanReversion') {
+    regimeAdjustment = denoisedRsi < 45 ? 0.15 : denoisedRsi > 55 ? -0.15 : 0;
+  } else {
+    regimeAdjustment = denoisedRsi > 55 ? 0.15 : denoisedRsi < 45 ? -0.15 : 0;
+  }
+  
+  // Timescale attention boost
+  const attentionBoost = Math.min(timescaleAttention.attentionMultiplier - 1, 0.2);
+  
+  // Cache quality penalty
+  const cachePenalty = (1 - cacheQuality) * 0.1;
+  
+  // Final advantage probability
+  const advantageProbability = Math.max(0.1, Math.min(0.9, baseProbability + rsiAdjustment + regimeAdjustment + attentionBoost - cachePenalty));
+  
+  // Kelly multiplier: higher when aligned, lower when misaligned
+  const kellyMultiplier = advantageProbability > 0.5 ? 1 + (advantageProbability - 0.5) * 0.5 : 1 - (0.5 - advantageProbability) * 0.3;
+  
+  // Trigger multiplier: tighter (lower) when probability is high
+  const triggerMultiplier = advantageProbability > 0.5 ? 1 - (advantageProbability - 0.5) * 0.3 : 1 + (0.5 - advantageProbability) * 0.5;
+  
+  return {
+    advantageProbability,
+    kellyMultiplier,
+    triggerMultiplier,
+  };
+}
+
 export function computeTailDependence(assetReturns: readonly number[], btcReturns: readonly number[], q = 0.05): number {
   if (assetReturns.length === 0 || btcReturns.length === 0) return 0;
+  // Require minimum sample size per spec
+  if (assetReturns.length < 20 || btcReturns.length < 20) return 0;
   const n = Math.min(assetReturns.length, btcReturns.length);
   const a = assetReturns.slice(-n);
   const b = btcReturns.slice(-n);
@@ -240,17 +304,23 @@ export function computeEffectiveSpread(bestBid: number, bestAsk: number, feeRate
 
 export function induceTrigger(transactionCost: number, downsideVariance: number): number {
   const eps = 1e-9;
-  return Math.cbrt(transactionCost / (downsideVariance + eps));
+  // Apply eps inside division only to avoid divide by zero, then floor result
+  const result = Math.cbrt(transactionCost / (downsideVariance + eps));
+  return Math.max(result, eps);
 }
 
 export function alignmentScore(live: { drift: number; rvDown: number; tail: number }, replay: { drift: number; rvDown: number; tail: number }): number {
   const alpha1 = 0.5;
   const alpha2 = 0.3;
   const alpha3 = 0.2;
-  const dDrift = Math.abs(live.drift - replay.drift);
-  const dRv = Math.abs(Math.log(live.rvDown + 1e-12) - Math.log(replay.rvDown + 1e-12));
-  const dTail = Math.abs(live.tail - replay.tail);
+  const eps = 1e-9;
+  
+  // Normalize deltas by replay values per spec formula
+  const dDrift = Math.abs(live.drift - replay.drift) / (Math.abs(replay.drift) + eps);
+  const dRv = Math.abs(live.rvDown - replay.rvDown) / (Math.abs(replay.rvDown) + eps);
+  const dTail = Math.abs(live.tail - replay.tail) / (Math.abs(replay.tail) + eps);
   const d = alpha1 * dDrift + alpha2 * dRv + alpha3 * dTail;
+  
   return Math.exp(-d);
 }
 
@@ -267,7 +337,8 @@ export function induceKelly({ effectiveDrift, rvDown, tailDependence }: { effect
   const eps = 1e-9;
   const variance = rvDown + eps;
   const kelly = effectiveDrift / variance * (1 - tailDependence);
-  return Math.max(0, kelly);
+  // Allow negative Kelly for short positions, floor at -1
+  return Math.max(-1, kelly);
 }
 
 /**

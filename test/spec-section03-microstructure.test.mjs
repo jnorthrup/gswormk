@@ -265,11 +265,11 @@ test('§3.3 observation target blends midprice and microprice', () => {
 test('§3.4 downside semivariance ignores upside deviations', () => {
   // Returns: positive values should be ignored (target=0), negative values squared
   const returns = [0.05, 0.10, 0.15, 0.20, 0.25];
-  // All positive => semivariance = 0
+  // All positive => semivariance = 0, but spec §13 requires floor at 1e-9
   const sv = downsideSemivariance(returns);
   assert.ok(
-    Math.abs(sv - 0) < 1e-12,
-    `semivariance=${sv} should equal 0 for all positive returns`,
+    sv >= 1e-9 && sv < 1e-6,
+    `semivariance=${sv} should be floored at 1e-9 for all positive returns`,
   );
 });
 
