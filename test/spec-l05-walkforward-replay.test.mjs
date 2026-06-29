@@ -138,3 +138,65 @@ test('runRollingWalkForwardReplay produces multiple real folds across the reques
   assert.match(report, /Fold 3:/);
   assert.doesNotMatch(report, /not fully implemented/i);
 });
+
+test('walk-forward replay aggregates per-archetype metrics so gate rejections are diagnosable', async () => {
+  const storage = new ReplayStorage(makeCandles({ count: 36 }));
+
+  const result = await runRollingWalkForwardReplay({
+    storage,
+    symbols: ['BTC-USD'],
+    granularity: '1h',
+    start: '2026-06-01T00:00:00.000Z',
+    end: '2026-06-02T06:00:00.000Z',
+    lookbackHours: 12,
+    stepHours: 6,
+    initialCash: 10_000,
+    semivarianceWindow: 4,
+  });
+
+  assert.ok(result.totals.byArchetype, 'totals should expose per-archetype aggregation');
+  const archetypes = Object.keys(result.totals.byArchetype);
+  assert.ok(archetypes.includes('no_edge'), 'no_edge archetype should appear in aggregation when the strict gate rejects');
+  const noEdge = result.totals.byArchetype.no_edge;
+  assert.ok(noEdge.decisions > 0, 'no_edge bucket should count decisions where the strict archetype gate fired');
+  assert.ok(Number.isFinite(noEdge.avgNetEdgeBps), 'avgNetEdgeBps should be a finite mean over gated decisions');
+  assert.ok(Object.keys(noEdge.reasons ?? {}).length > 0, 'rejection reasons should be aggregated per archetype');
+  assert.ok(noEdge.rejected === noEdge.decisions, 'every no_edge decision in this fixture was a rejected gate');
+
+  // Invariant: every persisted decision must be classified into exactly one archetype bucket.
+  assert.strictEqual(result.totals.decisions,
+    Object.values(result.totals.byArchetype).reduce((sum, bucket) => sum + bucket.decisions, 0),
+    'sum of bucket decisions must equal total decisions');
+  assert.strictEqual(result.totals.signals,
+    Object.values(result.totals.byArchetype).reduce((sum, bucket) => sum + bucket.signals, 0),
+    'sum of bucket signals must equal total signals (signals+decisions share an archetype->bucket map)');
+
+  for (const fold of result.folds) {
+    assert.ok(fold.byArchetype, 'every fold should expose byArchetype breakdown');
+    const foldArchetypes = Object.keys(fold.byArchetype);
+    for (const name of foldArchetypes) {
+      const bucket = fold.byArchetype[name];
+      assert.ok(Number.isFinite(bucket.avgNetEdgeBps), `fold.byArchetype.${name}.avgNetEdgeBps must be finite`);
+    }
+  }
+
+  const signalArchetypes = new Set(storage.signals.map((signal) => signal.archetype));
+  const trackedArchetypes = new Set([
+    'discount_reversion',
+    'growth_momentum',
+    'volatility_defense',
+    ...(signalArchetypes.size > 0 ? signalArchetypes : ['discount_reversion']),
+  ]);
+  for (const archetype of trackedArchetypes) {
+    if (result.totals.byArchetype[archetype]) {
+      const bucket = result.totals.byArchetype[archetype];
+      assert.ok(bucket.signals >= 0, `${archetype}.signals should be a real count`);
+      assert.ok(bucket.decisions >= 0, `${archetype}.decisions should be a real count`);
+    }
+  }
+
+  const report = renderWalkForwardReport(result);
+  assert.match(report, /byArchetype/);
+  assert.match(report, /no_edge/);
+});
+

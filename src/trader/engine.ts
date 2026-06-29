@@ -775,6 +775,12 @@ export class TraderEngine {
         notionalDelta: decision?.notionalDelta ?? decisionVector.deviation * portfolio.nav,
         executed: Boolean(decision?.accepted),
         reason: decision?.reason ?? (decisionVector.shouldTrade ? 'ORDER_REJECTED' : 'INSIDE_NO_TRADE_BAND'),
+        archetype: decision?.archetype ?? (decision?.accepted ? signal.archetype : null),
+        archetypeReason: decision?.archetypeReason ?? null,
+        grossEdgeBps: decision?.grossEdgeBps ?? signal.edge?.grossEdgeBps ?? null,
+        costBps: decision?.costBps ?? signal.edge?.costBps ?? null,
+        uncertaintyBps: decision?.uncertaintyBps ?? signal.edge?.uncertaintyBps ?? null,
+        netEdgeBps: decision?.netEdgeBps ?? signal.edge?.netEdgeBps ?? null,
       });
 
       console.log(

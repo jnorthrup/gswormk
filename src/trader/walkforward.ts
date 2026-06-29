@@ -39,6 +39,19 @@ type RollingWalkForwardReplayInput = {
   annualizationFactor?: number;
 };
 
+type ArchetypeBucket = {
+  signals: number;
+  decisions: number;
+  accepted: number;
+  rejected: number;
+  grossEdgeBps: number;
+  costBps: number;
+  uncertaintyBps: number;
+  netEdgeBps: number;
+  avgNetEdgeBps: number;
+  reasons: Record<string, number>;
+};
+
 type WalkForwardFold = {
   symbols: string[];
   trainStart: string;
@@ -53,6 +66,7 @@ type WalkForwardFold = {
   avgNetEdgeBps: number;
   totalReturnPct: number;
   reasons: Record<string, number>;
+  byArchetype: Record<string, ArchetypeBucket>;
 };
 
 type WalkForwardReplayResult = {
@@ -67,6 +81,7 @@ type WalkForwardReplayResult = {
     ordersRejected: number;
     avgNetEdgeBps: number;
     totalReturnPct: number;
+    byArchetype: Record<string, ArchetypeBucket>;
   };
 };
 
@@ -169,6 +184,7 @@ export async function runWalkForwardReplay(input: WalkForwardReplayInput): Promi
   const decisions = recorder.decisions.length;
   const ordersAccepted = recorder.decisions.filter((decision) => Boolean(decision.executed)).length;
   const finalNav = Number(recorder.portfolioSnapshots.at(-1)?.nav ?? initialCash);
+  const byArchetype = aggregateByArchetype(recorder.signals, recorder.decisions);
   const fold: WalkForwardFold = {
     symbols: input.symbols,
     trainStart: input.trainStart,
@@ -183,6 +199,7 @@ export async function runWalkForwardReplay(input: WalkForwardReplayInput): Promi
     avgNetEdgeBps: average(netEdges),
     totalReturnPct: initialCash > 0 ? ((finalNav / initialCash) - 1) * 100 : 0,
     reasons: countBy(recorder.decisions.map((decision) => String(decision.reason ?? 'UNKNOWN'))),
+    byArchetype,
   };
 
   return {
@@ -197,6 +214,7 @@ export async function runWalkForwardReplay(input: WalkForwardReplayInput): Promi
       ordersRejected: fold.ordersRejected,
       avgNetEdgeBps: fold.avgNetEdgeBps,
       totalReturnPct: fold.totalReturnPct,
+      byArchetype,
     },
   };
 }
@@ -253,12 +271,44 @@ export function renderWalkForwardReport(result: WalkForwardReplayResult): string
   if (result.folds.length > visibleFolds.length) {
     lines.push(`[CLI] ... ${result.folds.length - visibleFolds.length} more folds omitted from console report`);
   }
+  lines.push(`[CLI] byArchetype:`);
+  lines.push(renderArchetypeTable(totals.byArchetype));
   return lines.join('\n');
+}
+
+function renderArchetypeTable(byArchetype: Record<string, ArchetypeBucket>): string {
+  const names = Object.keys(byArchetype ?? {});
+  if (names.length === 0) return '[CLI]   (no persisted archetype buckets)';
+  const header = '[CLI]   ARCHETYPE | sig | dec | acc | rej | avgGrossBps | avgCostBps | avgUncBps | avgNetBps | reasons';
+  const rows = names
+    .sort()
+    .map((name) => {
+      const bucket = byArchetype[name]!;
+      const signalCount = bucket.signals;
+      const avgGross = signalCount > 0 ? bucket.grossEdgeBps / signalCount : 0;
+      const avgCost = signalCount > 0 ? bucket.costBps / signalCount : 0;
+      const avgUnc = signalCount > 0 ? bucket.uncertaintyBps / signalCount : 0;
+      const avgNet = bucket.avgNetEdgeBps;
+      return `[CLI]   ${pad(name, 20)} | ${pad(String(signalCount), 4)} | ${pad(String(bucket.decisions), 4)} | ${pad(String(bucket.accepted), 4)} | ${pad(String(bucket.rejected), 4)} | ${pad(formatNumber(avgGross), 11)} | ${pad(formatNumber(avgCost), 10)} | ${pad(formatNumber(avgUnc), 9)} | ${pad(formatNumber(avgNet), 8)} | ${formatReasons(bucket.reasons)}`;
+    });
+  return [header, ...rows].join('\n');
+}
+
+function pad(value: string, width: number): string {
+  if (value.length >= width) return value;
+  return value + ' '.repeat(width - value.length);
 }
 
 function summarizeFolds(folds: WalkForwardFold[]): WalkForwardReplayResult['totals'] {
   const signals = folds.reduce((sum, fold) => sum + fold.signals, 0);
   const edgeNumerator = folds.reduce((sum, fold) => sum + (fold.avgNetEdgeBps * fold.signals), 0);
+  const byArchetype: Record<string, ArchetypeBucket> = {};
+  for (const fold of folds) {
+    mergeArchetypes(byArchetype, fold.byArchetype);
+  }
+  for (const bucket of Object.values(byArchetype)) {
+    bucket.avgNetEdgeBps = bucket.signals > 0 ? bucket.netEdgeBps / bucket.signals : 0;
+  }
   return {
     folds: folds.length,
     trainCandles: folds.reduce((sum, fold) => sum + fold.trainCandles, 0),
@@ -269,7 +319,92 @@ function summarizeFolds(folds: WalkForwardFold[]): WalkForwardReplayResult['tota
     ordersRejected: folds.reduce((sum, fold) => sum + fold.ordersRejected, 0),
     avgNetEdgeBps: signals > 0 ? edgeNumerator / signals : 0,
     totalReturnPct: average(folds.map((fold) => fold.totalReturnPct)),
+    byArchetype,
   };
+}
+
+function aggregateByArchetype(signals: any[], decisions: any[]): Record<string, ArchetypeBucket> {
+  const buckets: Record<string, ArchetypeBucket> = {};
+
+  // Signals: count by `signal.archetype`, sum edge stack, mark "rejected" via archetype=null? no.
+  // Signal-level archetype is the precomputed trade archetype (signal.archetype).
+  for (const signal of signals) {
+    const name = String(signal.archetype ?? 'unknown');
+    const bucket = ensureBucket(buckets, name);
+    bucket.signals += 1;
+    bucket.grossEdgeBps += finiteNumber(signal.grossEdgeBps);
+    bucket.costBps += finiteNumber(signal.costBps);
+    bucket.uncertaintyBps += finiteNumber(signal.uncertaintyBps);
+    bucket.netEdgeBps += finiteNumber(signal.netEdgeBps);
+  }
+
+  // Decisions: every persisted decision carries its own archetype + reason.
+  // We treat the decision-archetype bucket as authoritative for the gate histogram,
+  // and merge it into the signal buckets when names collide.
+  for (const decision of decisions) {
+    const name = String(decision.archetype ?? 'no_edge');
+    const bucket = ensureBucket(buckets, name);
+    bucket.decisions += 1;
+    if (decision.executed) {
+      bucket.accepted += 1;
+    } else {
+      bucket.rejected += 1;
+    }
+    bucket.grossEdgeBps += finiteNumber(decision.grossEdgeBps);
+    bucket.costBps += finiteNumber(decision.costBps);
+    bucket.uncertaintyBps += finiteNumber(decision.uncertaintyBps);
+    bucket.netEdgeBps += finiteNumber(decision.netEdgeBps);
+    const reason = String(decision.reason ?? 'UNKNOWN');
+    bucket.reasons[reason] = (bucket.reasons[reason] ?? 0) + 1;
+  }
+
+  for (const bucket of Object.values(buckets)) {
+    bucket.avgNetEdgeBps = bucket.signals > 0 ? bucket.netEdgeBps / bucket.signals : 0;
+  }
+
+  return buckets;
+}
+
+function mergeArchetypes(target: Record<string, ArchetypeBucket>, source: Record<string, ArchetypeBucket>): void {
+  for (const [name, sourceBucket] of Object.entries(source ?? {})) {
+    const bucket = ensureBucket(target, name);
+    bucket.signals += sourceBucket.signals;
+    bucket.decisions += sourceBucket.decisions;
+    bucket.accepted += sourceBucket.accepted;
+    bucket.rejected += sourceBucket.rejected;
+    bucket.grossEdgeBps += sourceBucket.grossEdgeBps;
+    bucket.costBps += sourceBucket.costBps;
+    bucket.uncertaintyBps += sourceBucket.uncertaintyBps;
+    bucket.netEdgeBps += sourceBucket.netEdgeBps;
+    for (const [reason, count] of Object.entries(sourceBucket.reasons ?? {})) {
+      bucket.reasons[reason] = (bucket.reasons[reason] ?? 0) + count;
+    }
+  }
+}
+
+function ensureBucket(buckets: Record<string, ArchetypeBucket>, name: string): ArchetypeBucket {
+  let bucket = buckets[name];
+  if (!bucket) {
+    bucket = {
+      signals: 0,
+      decisions: 0,
+      accepted: 0,
+      rejected: 0,
+      grossEdgeBps: 0,
+      costBps: 0,
+      uncertaintyBps: 0,
+      netEdgeBps: 0,
+      avgNetEdgeBps: 0,
+      reasons: {},
+    };
+    buckets[name] = bucket;
+  }
+  return bucket;
+}
+
+function finiteNumber(value: unknown): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function recordingStorageProxy(storage: ReplayStorage, recorder: Recorder): ReplayStorage {
