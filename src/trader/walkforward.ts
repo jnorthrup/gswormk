@@ -26,6 +26,19 @@ type WalkForwardReplayInput = {
   annualizationFactor?: number;
 };
 
+type RollingWalkForwardReplayInput = {
+  storage: ReplayStorage;
+  symbols: string[];
+  granularity: string;
+  start: string;
+  end: string;
+  lookbackHours: number;
+  stepHours: number;
+  initialCash?: number;
+  semivarianceWindow?: number;
+  annualizationFactor?: number;
+};
+
 type WalkForwardFold = {
   symbols: string[];
   trainStart: string;
@@ -188,15 +201,75 @@ export async function runWalkForwardReplay(input: WalkForwardReplayInput): Promi
   };
 }
 
+export async function runRollingWalkForwardReplay(input: RollingWalkForwardReplayInput): Promise<WalkForwardReplayResult> {
+  const startMs = Date.parse(input.start);
+  const endMs = Date.parse(input.end);
+  const lookbackMs = input.lookbackHours * 3_600_000;
+  const stepMs = input.stepHours * 3_600_000;
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    throw new Error('rolling walk-forward requires a valid start/end range');
+  }
+  if (lookbackMs <= 0 || stepMs <= 0) {
+    throw new Error('rolling walk-forward requires lookbackHours and stepHours > 0');
+  }
+
+  const folds: WalkForwardFold[] = [];
+  for (let trainStartMs = startMs; trainStartMs + lookbackMs + stepMs <= endMs; trainStartMs += stepMs) {
+    const trainEndMs = trainStartMs + lookbackMs;
+    const testEndMs = trainEndMs + stepMs;
+    const replay = await runWalkForwardReplay({
+      storage: input.storage,
+      symbols: input.symbols,
+      granularity: input.granularity,
+      trainStart: new Date(trainStartMs).toISOString(),
+      trainEnd: new Date(trainEndMs).toISOString(),
+      testEnd: new Date(testEndMs).toISOString(),
+      initialCash: input.initialCash,
+      semivarianceWindow: input.semivarianceWindow,
+      annualizationFactor: input.annualizationFactor,
+    });
+    folds.push(...replay.folds);
+  }
+
+  if (folds.length === 0) {
+    throw new Error('rolling walk-forward range produced zero folds');
+  }
+
+  return {
+    folds,
+    totals: summarizeFolds(folds),
+  };
+}
+
 export function renderWalkForwardReport(result: WalkForwardReplayResult): string {
   const totals = result.totals;
   const lines = [
     `[CLI] Walk-forward replay complete: folds=${totals.folds} trainCandles=${totals.trainCandles} testCandles=${totals.testCandles} signals=${totals.signals} decisions=${totals.decisions} accepted=${totals.ordersAccepted} rejected=${totals.ordersRejected} avgNetEdgeBps=${formatNumber(totals.avgNetEdgeBps)} totalReturnPct=${formatNumber(totals.totalReturnPct)}`,
   ];
-  for (const [index, fold] of result.folds.entries()) {
+  const visibleFolds = result.folds.slice(0, 10);
+  for (const [index, fold] of visibleFolds.entries()) {
     lines.push(`[CLI] Fold ${index + 1}: symbols=${fold.symbols.join(',')} period=${fold.trainEnd}..${fold.testEnd} decisions=${fold.decisions} accepted=${fold.ordersAccepted} rejected=${fold.ordersRejected} avgNetEdgeBps=${formatNumber(fold.avgNetEdgeBps)} reasons=${formatReasons(fold.reasons)}`);
   }
+  if (result.folds.length > visibleFolds.length) {
+    lines.push(`[CLI] ... ${result.folds.length - visibleFolds.length} more folds omitted from console report`);
+  }
   return lines.join('\n');
+}
+
+function summarizeFolds(folds: WalkForwardFold[]): WalkForwardReplayResult['totals'] {
+  const signals = folds.reduce((sum, fold) => sum + fold.signals, 0);
+  const edgeNumerator = folds.reduce((sum, fold) => sum + (fold.avgNetEdgeBps * fold.signals), 0);
+  return {
+    folds: folds.length,
+    trainCandles: folds.reduce((sum, fold) => sum + fold.trainCandles, 0),
+    testCandles: folds.reduce((sum, fold) => sum + fold.testCandles, 0),
+    signals,
+    decisions: folds.reduce((sum, fold) => sum + fold.decisions, 0),
+    ordersAccepted: folds.reduce((sum, fold) => sum + fold.ordersAccepted, 0),
+    ordersRejected: folds.reduce((sum, fold) => sum + fold.ordersRejected, 0),
+    avgNetEdgeBps: signals > 0 ? edgeNumerator / signals : 0,
+    totalReturnPct: average(folds.map((fold) => fold.totalReturnPct)),
+  };
 }
 
 function recordingStorageProxy(storage: ReplayStorage, recorder: Recorder): ReplayStorage {

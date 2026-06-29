@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runWalkForwardReplay, renderWalkForwardReport } from '../src/trader/walkforward.ts';
+import { runWalkForwardReplay, runRollingWalkForwardReplay, renderWalkForwardReport } from '../src/trader/walkforward.ts';
 
 class ReplayStorage {
   constructor(candles) {
@@ -107,5 +107,34 @@ test('runWalkForwardReplay replays test candles through the real engine path and
   assert.match(report, /folds=1/);
   assert.match(report, /decisions=/);
   assert.match(report, /avgNetEdgeBps=/);
+  assert.doesNotMatch(report, /not fully implemented/i);
+});
+
+test('runRollingWalkForwardReplay produces multiple real folds across the requested period', async () => {
+  const storage = new ReplayStorage(makeCandles({ count: 36 }));
+
+  const result = await runRollingWalkForwardReplay({
+    storage,
+    symbols: ['BTC-USD'],
+    granularity: '1h',
+    start: '2026-06-01T00:00:00.000Z',
+    end: '2026-06-02T06:00:00.000Z',
+    lookbackHours: 12,
+    stepHours: 6,
+    initialCash: 10_000,
+    semivarianceWindow: 4,
+  });
+
+  assert.strictEqual(result.folds.length, 3);
+  assert.strictEqual(result.totals.folds, 3);
+  assert.ok(result.folds.every((fold) => fold.testCandles === 6));
+  assert.ok(result.folds.every((fold) => fold.decisions > 0), 'each fold should replay through the real engine path');
+  assert.strictEqual(result.totals.decisions, result.folds.reduce((sum, fold) => sum + fold.decisions, 0));
+  assert.strictEqual(result.totals.ordersAccepted + result.totals.ordersRejected, result.totals.decisions);
+  assert.ok(Number.isFinite(result.totals.avgNetEdgeBps));
+
+  const report = renderWalkForwardReport(result);
+  assert.match(report, /folds=3/);
+  assert.match(report, /Fold 3:/);
   assert.doesNotMatch(report, /not fully implemented/i);
 });

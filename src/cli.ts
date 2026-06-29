@@ -9,7 +9,7 @@ import { CoinbaseCDPWS } from './feeds/coinbase-cdp-ws.mjs';
 import { CoinbaseSync } from './feeds/coinbase-sync.ts';
 import { CoinMarketCapScraper } from './feeds/coinmarketcap-scraper.ts';
 import { renderStatusReport } from './trader/reporting.ts';
-import { runWalkForwardReplay, renderWalkForwardReport } from './trader/walkforward.ts';
+import { runRollingWalkForwardReplay, renderWalkForwardReport } from './trader/walkforward.ts';
 import { granularityMinutes } from './lib/time.ts';
 
 type CliValue = string | boolean | undefined;
@@ -252,23 +252,25 @@ async function main(): Promise<void> {
 
     // Walk-forward: train on [t-lookback, t), test on [t, t+step)
     const trainStart = new Date(startDate);
+    const rangeEnd = new Date(endDate);
     const trainEnd = new Date(trainStart.getTime() + lookback * 3600000);
     const testEnd = new Date(trainEnd.getTime() + step * 3600000);
 
-    if (testEnd > new Date(endDate)) {
+    if (testEnd > rangeEnd) {
       console.error('[CLI] Lookback too large for date range');
       process.exitCode = 1;
       await storage.close();
       return;
     }
 
-    // Fetch the full replay window: train on [trainStart, trainEnd), replay on [trainEnd, testEnd).
+    // Fetch the full replay window so rolling folds can advance through the entire period.
     console.log(`[CLI] Training period: ${trainStart.toISOString().slice(0, 19)} to ${trainEnd.toISOString().slice(0, 19)}`);
-    console.log(`[CLI] Test period: ${trainEnd.toISOString().slice(0, 19)} to ${testEnd.toISOString().slice(0, 19)}`);
+    console.log(`[CLI] Rolling test period: ${trainEnd.toISOString().slice(0, 19)} to ${rangeEnd.toISOString().slice(0, 19)}`);
     const restClient = new CoinbaseCDPRest();
     const sync = new CoinbaseSync({ storage, restClient });
     const minutesPerCandle = granularityMinutes(granularity);
-    const replayLimit = Math.ceil(((lookback + step) * 60) / minutesPerCandle) + 1;
+    const replayLimit = Math.ceil(((rangeEnd.getTime() - trainStart.getTime()) / 60000) / minutesPerCandle) + 1;
+    const trainCandleCount = Math.ceil((lookback * 60) / minutesPerCandle);
     const { interpolateCandleGaps } = await import('./trader/cache-manager.ts');
 
     for (const symbol of symbols) {
@@ -277,7 +279,7 @@ async function main(): Promise<void> {
           symbol,
           granularity,
           limit: replayLimit,
-          nowMs: testEnd.getTime(),
+          nowMs: rangeEnd.getTime(),
         });
         if (replayCandles.length > 0) {
           const sorted = [...replayCandles].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
@@ -292,15 +294,16 @@ async function main(): Promise<void> {
     }
 
     console.log(`[CLI] Running walk-forward replay...`);
-    const replay = await runWalkForwardReplay({
+    const replay = await runRollingWalkForwardReplay({
       storage,
       symbols,
       granularity,
-      trainStart: trainStart.toISOString(),
-      trainEnd: trainEnd.toISOString(),
-      testEnd: testEnd.toISOString(),
+      start: trainStart.toISOString(),
+      end: rangeEnd.toISOString(),
+      lookbackHours: lookback,
+      stepHours: step,
       initialCash: numberOption(values, 'initial-cash', 10_000),
-      semivarianceWindow: Math.max(4, Math.min(120, replayLimit - Math.ceil((step * 60) / minutesPerCandle) - 1)),
+      semivarianceWindow: Math.max(4, Math.min(120, trainCandleCount - 1)),
     });
     console.log(renderWalkForwardReport(replay));
   } else {
