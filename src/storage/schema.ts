@@ -47,7 +47,11 @@ const duckdbSchema = {
       advantage_probability REAL NOT NULL DEFAULT 0.5,
       risk_state TEXT,
       dominant_regime TEXT NOT NULL DEFAULT 'meanReversion',
-      archetype TEXT
+      archetype TEXT,
+      gross_edge_bps REAL,
+      cost_bps REAL,
+      uncertainty_bps REAL,
+      net_edge_bps REAL
     )
   `,
   orders: `
@@ -65,7 +69,8 @@ const duckdbSchema = {
       gross_edge_bps REAL,
       cost_bps REAL,
       uncertainty_bps REAL,
-      net_edge_bps REAL
+      net_edge_bps REAL,
+      archetype TEXT
     );
   `,
   quotaMetrics: `
@@ -170,5 +175,16 @@ const duckdbSchema = {
 export const schema = duckdbSchema;
 
 export const migrations = {
-  signalColumns: [],
+  signalColumns: [
+    'ALTER TABLE signals ADD COLUMN archetype TEXT',
+    'ALTER TABLE signals ADD COLUMN gross_edge_bps REAL',
+    'ALTER TABLE signals ADD COLUMN cost_bps REAL',
+    'ALTER TABLE signals ADD COLUMN uncertainty_bps REAL',
+    'ALTER TABLE signals ADD COLUMN net_edge_bps REAL',
+    'ALTER TABLE orders ADD COLUMN gross_edge_bps REAL',
+    'ALTER TABLE orders ADD COLUMN cost_bps REAL',
+    'ALTER TABLE orders ADD COLUMN uncertainty_bps REAL',
+    'ALTER TABLE orders ADD COLUMN net_edge_bps REAL',
+    'ALTER TABLE orders ADD COLUMN archetype TEXT',
+  ],
 } as const;

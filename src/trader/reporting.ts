@@ -101,6 +101,46 @@ export function renderSimulationReport(summary: AnyRecord): string {
     termWidth,
   }));
 
+  // Edge/archetype table for the latest signal rows. Kept separate so the core
+  // signal table remains readable on normal terminal widths.
+  lines.push('');
+  lines.push('SIGNAL EDGE');
+  lines.push(renderTable({
+    title: 'SIGNAL EDGE',
+    headers: ['SYMBOL', 'ARCHETYPE', 'GROSS_EDGE', 'COST', 'UNC', 'NET_EDGE'],
+    rows: (summary.latestSignals ?? []).map((signal: AnyRecord) => [
+      signal.symbol,
+      signal.archetype ?? '-',
+      formatBps(signal.gross_edge_bps),
+      formatBps(signal.cost_bps),
+      formatBps(signal.uncertainty_bps),
+      formatBps(signal.net_edge_bps),
+    ]),
+    align: ['l', 'l', 'r', 'r', 'r', 'r'],
+    termWidth,
+  }));
+
+  // Orders table
+  lines.push('');
+  lines.push('LATEST ORDERS');
+  lines.push(renderTable({
+    title: 'LATEST ORDERS',
+    headers: ['SYMBOL', 'SIDE', 'QTY', 'PRICE', 'ARCHETYPE', 'GROSS_EDGE', 'COST', 'UNC', 'NET_EDGE'],
+    rows: (summary.latestOrders ?? []).map((order: AnyRecord) => [
+      order.symbol,
+      order.side,
+      formatMaybe(order.quantity, 6),
+      '$' + formatBps(order.price),
+      order.archetype ?? '-',
+      formatBps(order.gross_edge_bps),
+      formatBps(order.cost_bps),
+      formatBps(order.uncertainty_bps),
+      formatBps(order.net_edge_bps),
+    ]),
+    align: ['l', 'l', 'r', 'r', 'l', 'r', 'r', 'r', 'r'],
+    termWidth,
+  }));
+
   // Decisions table
   lines.push('');
   lines.push(renderTable({
@@ -153,6 +193,7 @@ export function renderStatusReport(snapshot: AnyRecord): string {
       weight: position.weight,
     })),
     latestSignals: snapshot.latestSignals,
+    latestOrders: snapshot.latestOrders,
     latestDecisions: snapshot.latestDecisions,
     spotMarketAssets: snapshot.spotMarketAssets ?? [],
   }));
@@ -217,6 +258,10 @@ function indexAssets(assets: AssetRef[]): Map<string, AssetRef> {
 
 function formatMaybe(value: number, digits = 4): string | number {
   return Number.isFinite(value) ? round(value, digits) : '–';
+}
+
+function formatBps(value: number): string {
+  return Number.isFinite(value) ? round(value, 2).toFixed(2) : '–';
 }
 
 function formatProbability(value: number): string {

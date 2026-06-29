@@ -9,6 +9,8 @@ import { CoinbaseCDPWS } from './feeds/coinbase-cdp-ws.mjs';
 import { CoinbaseSync } from './feeds/coinbase-sync.ts';
 import { CoinMarketCapScraper } from './feeds/coinmarketcap-scraper.ts';
 import { renderStatusReport } from './trader/reporting.ts';
+import { runWalkForwardReplay, renderWalkForwardReport } from './trader/walkforward.ts';
+import { granularityMinutes } from './lib/time.ts';
 
 type CliValue = string | boolean | undefined;
 type CliValues = Record<string, CliValue>;
@@ -260,42 +262,47 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Fetch training data
+    // Fetch the full replay window: train on [trainStart, trainEnd), replay on [trainEnd, testEnd).
     console.log(`[CLI] Training period: ${trainStart.toISOString().slice(0, 19)} to ${trainEnd.toISOString().slice(0, 19)}`);
+    console.log(`[CLI] Test period: ${trainEnd.toISOString().slice(0, 19)} to ${testEnd.toISOString().slice(0, 19)}`);
     const restClient = new CoinbaseCDPRest();
     const sync = new CoinbaseSync({ storage, restClient });
+    const minutesPerCandle = granularityMinutes(granularity);
+    const replayLimit = Math.ceil(((lookback + step) * 60) / minutesPerCandle) + 1;
+    const { interpolateCandleGaps } = await import('./trader/cache-manager.ts');
 
     for (const symbol of symbols) {
       try {
-        // Fetch training candles
-        const trainCandles = await sync.fetchCandleWindow({
+        const replayCandles = await sync.fetchCandleWindow({
           symbol,
           granularity,
-          limit: Math.ceil(lookback / (granularity === '1h' ? 1 : (granularity === '1m' ? 60 : 1))),
-          nowMs: trainEnd.getTime(),
+          limit: replayLimit,
+          nowMs: testEnd.getTime(),
         });
-        if (trainCandles.length > 0) {
-          const sorted = [...trainCandles].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-          const { result } = (await import('./trader/cache-manager.ts')).interpolateCandleGaps(sorted, granularity);
+        if (replayCandles.length > 0) {
+          const sorted = [...replayCandles].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+          const { result } = interpolateCandleGaps(sorted, granularity);
           const ascending = [...result].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
           await storage.upsertCandles(ascending);
-          console.log(`[CLI] ${symbol}: ${ascending.length} training candles loaded`);
+          console.log(`[CLI] ${symbol}: ${ascending.length} replay candles loaded`);
         }
       } catch (error) {
-        console.error(`[CLI] ${symbol} training fetch failed:`, (error as Error).message);
+        console.error(`[CLI] ${symbol} replay fetch failed:`, (error as Error).message);
       }
     }
 
-    // Run backtest on training period
-    const config = defaultConfig({ symbols, ticks: 100, seed: 42, initialCash: 10000 });
-    const engine = new TraderEngine({ storage, config });
-    await engine.warmup();
-
-    console.log(`[CLI] Running backtest...`);
-    // Simulate ticks on training data would go here
-    // For now, just report what would happen
-    console.log(`[CLI] Backtest complete (walk-forward not fully implemented - need feed replay)`);
-    console.log(`[CLI] Test period would be: ${trainEnd.toISOString().slice(0, 19)} to ${testEnd.toISOString().slice(0, 19)}`);
+    console.log(`[CLI] Running walk-forward replay...`);
+    const replay = await runWalkForwardReplay({
+      storage,
+      symbols,
+      granularity,
+      trainStart: trainStart.toISOString(),
+      trainEnd: trainEnd.toISOString(),
+      testEnd: testEnd.toISOString(),
+      initialCash: numberOption(values, 'initial-cash', 10_000),
+      semivarianceWindow: Math.max(4, Math.min(120, replayLimit - Math.ceil((step * 60) / minutesPerCandle) - 1)),
+    });
+    console.log(renderWalkForwardReport(replay));
   } else {
     console.error(`Unknown command: ${command}`);
     process.exitCode = 1;

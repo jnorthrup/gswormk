@@ -43,6 +43,24 @@ test('renderStatusReport includes asset names, CMC chart refs, and advantage fie
         current_weight: 0.2,
         trigger: 0.05,
         risk_state: 'OK',
+        archetype: 'growth_momentum',
+        gross_edge_bps: 120.5,
+        cost_bps: 8.25,
+        uncertainty_bps: 3,
+        net_edge_bps: 109.25,
+      },
+    ],
+    latestOrders: [
+      {
+        symbol: 'BTC-USD',
+        side: 'BUY',
+        quantity: 0.01,
+        price: 60000,
+        archetype: 'growth_momentum',
+        gross_edge_bps: 120.5,
+        cost_bps: 8.25,
+        uncertainty_bps: 3,
+        net_edge_bps: 109.25,
       },
     ],
     latestDecisions: [
@@ -69,6 +87,11 @@ test('renderStatusReport includes asset names, CMC chart refs, and advantage fie
   assert.match(report, /Bitcoin/);
   assert.match(report, /72.5%/);
   assert.match(report, /68.2/);
+  assert.match(report, /ARCHETYPE/);
+  assert.match(report, /NET_EDGE/);
+  assert.match(report, /growth_momentum/);
+  assert.match(report, /109.25/);
+  assert.match(report, /LATEST ORDERS/);
   // URLs may be truncated in table, check for domain
   assert.match(report, /coinmarketcap\.com/);
 });

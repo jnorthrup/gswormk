@@ -13,9 +13,10 @@ import { alignmentScore,
   computeRsiSplatAndKalman,
   computeTimescaleAttention,
   computeConfidenceScalers,
-  classifyTradeArchetype,
   variance,
 } from './signals.ts';
+import { computeEdgeDecomposition, type EdgeDecomposition } from './edge.ts';
+import { ARCHETYPES, classifyArchetype, type Archetype, type ArchetypeResult } from './archetype.ts';
 import { PaperBroker, convertToUSD, findConversionRate } from './paper-broker.ts';
 import { DrawThroughCacheManager, type CandleLike } from './cache-manager.ts';
 import { buildDecisionVector, derivePortfolioTargets } from './optimizer.ts';
@@ -126,6 +127,9 @@ type EngineSignal = {
   timescaleAttention: ReturnType<typeof computeTimescaleAttention>;
   confidenceScalers: ReturnType<typeof computeConfidenceScalers>;
   dominantRegime: string;
+  archetype: Archetype;
+  archetypeReason: string;
+  edge: EdgeDecomposition;
 };
 
 type ComputeSignalInput = {
@@ -148,6 +152,51 @@ type PortfolioSnapshot = {
     weight: number;
   }>;
 };
+
+type EdgeGateSignal = Pick<EngineSignal,
+  'innovationZ' | 'obi' | 'denoisedRsi' | 'rsiInnovationZ' | 'tailDependence' |
+  'rvDown' | 'timescaleAttention' | 'effectiveDrift' | 'spread' | 'effectiveCost' |
+  'cacheQuality' | 'dominantRegime'
+>;
+
+function rsiDisplacement(signal: EdgeGateSignal): number {
+  const rsi = signal.denoisedRsi;
+  if (rsi !== null && rsi !== undefined && Number.isFinite(rsi)) {
+    return (rsi - 50) / 20;
+  }
+  return Number.isFinite(signal.rsiInnovationZ) ? signal.rsiInnovationZ : 0;
+}
+
+function classifyEngineSignal(signal: EdgeGateSignal): ArchetypeResult {
+  return classifyArchetype({
+    innovationZ: signal.innovationZ,
+    obi: signal.obi,
+    rsiDisplacement: rsiDisplacement(signal),
+    tailDependence: signal.tailDependence,
+    annualizedRvDown: signal.rvDown,
+    timescaleAgreement: signal.timescaleAttention?.supportCount ?? 0,
+  });
+}
+
+function minEdgeBpsForRegime(config: Record<string, any>, dominantRegime: string): number {
+  const byRegime = config.minEdgeBpsByRegime;
+  const value = byRegime && typeof byRegime === 'object' ? byRegime[dominantRegime] : config.minEdgeBps;
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function edgeForSignal(signal: EdgeGateSignal, minEdgeBps = 0): EdgeDecomposition {
+  const spreadHalfCost = Math.max(0, (signal.spread ?? 0) / 2);
+  const feeRate = 0.0006;
+  const slippage = Math.max(0, (signal.effectiveCost ?? 0) - spreadHalfCost - feeRate);
+  return computeEdgeDecomposition({
+    effectiveDrift: signal.effectiveDrift,
+    spread: spreadHalfCost,
+    feeRate,
+    slippage,
+    cacheQuality: signal.cacheQuality,
+    minEdgeBps,
+  });
+}
 
 type FeedLike = {
   stream(): AsyncIterable<MarketEvent>;
@@ -695,15 +744,11 @@ export class TraderEngine {
         advantageProbability: signal.confidenceScalers.advantageProbability,
         riskState,
         dominantRegime: signal.dominantRegime,
-        archetype: classifyTradeArchetype({
-          regimeMomentum: signal.regime?.momentum ?? 0,
-          regimeMeanReversion: signal.regime?.meanReversion ?? 0,
-          regimeVolatility: signal.regime?.volatility ?? 0,
-          alignment: signal.alignment,
-          obi: signal.obi,
-          rsi: signal.confidenceScalers.denoisedRsi,
-          tailDependence: signal.tailDependence,
-        }) ?? 'volatility_defense',
+        archetype: signal.archetype,
+        grossEdgeBps: signal.edge.grossEdgeBps,
+        costBps: signal.edge.costBps,
+        uncertaintyBps: signal.edge.uncertaintyBps,
+        netEdgeBps: signal.edge.netEdgeBps,
       });
 
       await this.storage.insertQuotaMetric({
@@ -770,6 +815,7 @@ export class TraderEngine {
     const annualizedRvDown = Math.max(rvDown * this.config.annualizationFactor, 1e-9);
     const tailDependence = computeTailDependence(symbolState.returns, symbolState.btcReturns, this.config.tailQuantile);
     const effectiveCost = hasLiquidity ? computeEffectiveSpread(bestBid, bestAsk) : 1.0;
+    const spread = hasLiquidity ? (bestAsk - bestBid) / event.mid : 0;
 
     const currentWeight = this.currentWeight(event.symbol, event.last);
     let trigger = induceTrigger(effectiveCost, annualizedRvDown);
@@ -847,6 +893,26 @@ export class TraderEngine {
     finalTrigger *= confidenceScalers.triggerMultiplier ?? 1;
     finalKelly *= confidenceScalers.kellyMultiplier ?? 1;
 
+    const denoisedRsi = rsiContext?.rsi ?? null;
+    const rsiInnovation = rsiContext?.innovation ?? null;
+    const rsiInnovationZ = rsiContext?.innovationZ ?? 0;
+    const gateSignal = {
+      innovationZ: kalman.innovationZ,
+      obi,
+      denoisedRsi,
+      rsiInnovationZ,
+      tailDependence,
+      rvDown: annualizedRvDown,
+      timescaleAttention,
+      effectiveDrift,
+      spread,
+      effectiveCost,
+      cacheQuality,
+      dominantRegime,
+    };
+    const archetypeResult = classifyEngineSignal(gateSignal);
+    const edge = edgeForSignal(gateSignal, minEdgeBpsForRegime(this.config, dominantRegime));
+
     return {
       symbol: event.symbol,
       event,
@@ -857,15 +923,15 @@ export class TraderEngine {
       rvDown: annualizedRvDown,
       tailDependence,
       effectiveCost,
-      spread: (bestAsk - bestBid) / event.mid,
+      spread,
       trigger: finalTrigger,
       alignment,
       cacheQuality,
       effectiveDrift,
       rawKelly: regimeKelly,
-      denoisedRsi: rsiContext?.rsi ?? null,
-      rsiInnovation: rsiContext?.innovation ?? null,
-      rsiInnovationZ: rsiContext?.innovationZ ?? 0,
+      denoisedRsi,
+      rsiInnovation,
+      rsiInnovationZ,
       currentWeight,
       urgency: urgencyFromInnovation(kalman.innovationZ),
       regime,
@@ -874,6 +940,9 @@ export class TraderEngine {
       timescaleAttention,
       confidenceScalers,
       dominantRegime,
+      archetype: archetypeResult.archetype,
+      archetypeReason: archetypeResult.reason,
+      edge,
     };
   }
 
@@ -1018,6 +1087,40 @@ export class TraderEngine {
 
     const portfolio = this.broker.getPortfolio(this.state.prices);
     const drawdown = (this.state.peakNav - portfolio.nav) / this.state.peakNav;
+    const archetypeResult: ArchetypeResult = (signal as any).archetype
+      ? { archetype: signal.archetype, reason: signal.archetypeReason ?? 'precomputed archetype', checks: [] }
+      : classifyEngineSignal(signal);
+    const edge = (signal as any).edge ?? edgeForSignal(signal, minEdgeBpsForRegime(this.config, signal.dominantRegime));
+    const gateNotionalDelta = (targetWeight - signal.currentWeight) * portfolio.nav;
+
+    if (archetypeResult.archetype === ARCHETYPES.NO_EDGE) {
+      return {
+        accepted: false,
+        reason: 'NO_ARCHETYPE_EDGE',
+        notionalDelta: gateNotionalDelta,
+        archetype: archetypeResult.archetype,
+        archetypeReason: archetypeResult.reason,
+        grossEdgeBps: edge.grossEdgeBps,
+        costBps: edge.costBps,
+        uncertaintyBps: edge.uncertaintyBps,
+        netEdgeBps: edge.netEdgeBps,
+      };
+    }
+
+    if (!edge.passesGate) {
+      return {
+        accepted: false,
+        reason: 'NET_EDGE_TOO_LOW',
+        notionalDelta: gateNotionalDelta,
+        archetype: archetypeResult.archetype,
+        archetypeReason: archetypeResult.reason,
+        grossEdgeBps: edge.grossEdgeBps,
+        costBps: edge.costBps,
+        uncertaintyBps: edge.uncertaintyBps,
+        netEdgeBps: edge.netEdgeBps,
+      };
+    }
+
     // Post a validate_only virtual order to track codec tracking loss
     const guessSide = signal.effectiveDrift > 0 ? 'BUY' : 'SELL';
     const guessQuantity = 100000 / event.mid;
@@ -1184,11 +1287,12 @@ export class TraderEngine {
       notionalDelta: notional,
       executionUrgency,
       executionMode,
-      // Edge decomposition (basis points)
-      grossEdgeBps: signal.effectiveDrift * 10000,
-      costBps: signal.effectiveCost * 10000,
-      uncertaintyBps: Math.max(0, (1 - signal.cacheQuality) * 500), // ~50bps at zero cache quality
-      netEdgeBps: (signal.effectiveDrift - signal.effectiveCost - Math.max(0, (1 - signal.cacheQuality) * 0.05)) * 10000,
+      archetype: archetypeResult.archetype,
+      archetypeReason: archetypeResult.reason,
+      grossEdgeBps: edge.grossEdgeBps,
+      costBps: edge.costBps,
+      uncertaintyBps: edge.uncertaintyBps,
+      netEdgeBps: edge.netEdgeBps,
     };
   }
 

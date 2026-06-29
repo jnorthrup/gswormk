@@ -110,8 +110,9 @@ export class DuckDbStorage {
         regime_mean_reversion, regime_volatility, timescale_support_count,
         timescale_window_center, timescale_attention, timescale_time_dilation,
         denoised_rsi, rsi_innovation_z, confidence_scalers, advantage_probability,
-        risk_state, dominant_regime
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        risk_state, dominant_regime, archetype, gross_edge_bps, cost_bps,
+        uncertainty_bps, net_edge_bps
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       signal.timestamp, signal.symbol, signal.mid, signal.spread, signal.effectiveCost, signal.obi,
       signal.innovationZ, signal.rvDown, signal.tailDependence, signal.alignment, signal.cacheQuality,
       signal.effectiveDrift, signal.targetWeight, signal.currentWeight, signal.trigger, signal.drawdown, signal.quotaHit,
@@ -119,15 +120,16 @@ export class DuckDbStorage {
       signal.timescaleWindowCenter ?? 1, signal.timescaleAttention ?? 1, signal.timescaleTimeDilation ?? 1,
       signal.denoisedRsi !== null && signal.denoisedRsi !== undefined ? signal.denoisedRsi : null,
       signal.rsiInnovationZ ?? 0, signal.confidenceScalers ?? 1, signal.advantageProbability ?? 0.5,
-      signal.riskState, signal.dominantRegime || 'meanReversion',
+      signal.riskState, signal.dominantRegime || 'meanReversion', signal.archetype ?? null,
+      signal.grossEdgeBps ?? null, signal.costBps ?? null, signal.uncertaintyBps ?? null, signal.netEdgeBps ?? null,
     );
   }
 
   async insertOrder(order: any): Promise<void> {
     await this.exec(
-      `INSERT INTO orders (timestamp, symbol, side, quantity, price, gross, remaining_cash, remaining_units, gross_edge_bps, cost_bps, uncertainty_bps, net_edge_bps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO orders (timestamp, symbol, side, quantity, price, gross, remaining_cash, remaining_units, gross_edge_bps, cost_bps, uncertainty_bps, net_edge_bps, archetype) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       order.timestamp, order.symbol, order.side, order.quantity, order.price, order.gross, order.remainingCash, order.remainingUnits,
-      order.grossEdgeBps ?? null, order.costBps ?? null, order.uncertaintyBps ?? null, order.netEdgeBps ?? null,
+      order.grossEdgeBps ?? null, order.costBps ?? null, order.uncertaintyBps ?? null, order.netEdgeBps ?? null, order.archetype ?? null,
     );
   }
 
