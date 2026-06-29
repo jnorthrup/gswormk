@@ -238,7 +238,9 @@ async function main(): Promise<void> {
     }
     const granularity = stringOption(values, 'granularity', '1h');
     const lookback = numberOption(values, 'lookback', 168); // 7 days in hours
-    const step = numberOption(values, 'step', 24); // 1 day step
+    // Parse step - handle both numeric (24) and string with suffix (24h, 1h)
+    const stepRaw = values['step'];
+    const step = typeof stepRaw === 'string' ? parseInt(stepRaw.replace(/h$/, ''), 10) : 24;
     const startDate = stringOption(values, 'start', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
     const endDate = stringOption(values, 'end', new Date().toISOString().slice(0, 10));
 
