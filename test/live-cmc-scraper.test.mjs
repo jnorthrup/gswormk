@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createStorage } from '../src/storage/index.mjs';
-import { computeRsiSplatAndKalman } from '../src/trader/signals.mjs';
-import { CoinMarketCapScraper } from '../src/feeds/coinmarketcap-scraper.mjs';
-import { TraderEngine } from '../src/trader/engine.mjs';
+import { createStorage } from '../src/storage/index.ts';
+import { computeRsiSplatAndKalman } from '../src/trader/signals.ts';
+import { CoinMarketCapScraper } from '../src/feeds/coinmarketcap-scraper.ts';
+import { TraderEngine } from '../src/trader/engine.ts';
 
 // ── Signals/Splatting Tests ──────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ test('computeRsiSplatAndKalman: applies Gaussian weights properly', () => {
 // ── Scraper integration with SQLite ─────────────────────────────────────
 
 test('TraderEngine: getDenoisedRsi draw-through', async () => {
-  const storage = await createStorage({ kind: 'sqlite', path: ':memory:' });
+  const storage = await createStorage({ kind: 'duckdb', path: ':memory:' });
   await storage.init();
   
   // Set up engine with config
@@ -94,4 +94,153 @@ test('TraderEngine: getDenoisedRsi draw-through', async () => {
   assert.ok(denoisedRsi.innovation !== null);
 
   await storage.close();
+});
+
+test('SQLite storage: spot market asset refs preserve names and CMC chart links', async () => {
+  const storage = await createStorage({ kind: 'duckdb', path: ':memory:' });
+  await storage.init();
+
+  await storage.upsertSpotMarketAsset({
+    symbol: 'BTC-USD',
+    baseSymbol: 'BTC',
+    quoteSymbol: 'USD',
+    assetName: 'Bitcoin',
+    baseName: 'Bitcoin',
+    quoteName: 'US Dollar',
+    displayName: 'BTC-USD',
+    updatedAt: '2026-06-27T12:00:00Z',
+  });
+
+  await storage.upsertSpotMarketAsset({
+    symbol: 'BTC-USD',
+    baseSymbol: 'BTC',
+    quoteSymbol: 'USD',
+    cmcAssetId: '1',
+    cmcSymbol: 'BTC',
+    cmcName: 'Bitcoin',
+    cmcSlug: 'bitcoin',
+    cmcRsiUrl: 'https://coinmarketcap.com/charts/rsi/',
+    cmcMainPageUrl: 'https://coinmarketcap.com/currencies/bitcoin/',
+    updatedAt: '2026-06-27T12:05:00Z',
+  });
+
+  const asset = await storage.getSpotMarketAsset({ symbol: 'BTC-USD' });
+  assert.deepStrictEqual(asset, {
+    symbol: 'BTC-USD',
+    baseSymbol: 'BTC',
+    quoteSymbol: 'USD',
+    assetName: 'Bitcoin',
+    baseName: 'Bitcoin',
+    quoteName: 'US Dollar',
+    displayName: 'BTC-USD',
+    cmcAssetId: '1',
+    cmcSymbol: 'BTC',
+    cmcName: 'Bitcoin',
+    cmcSlug: 'bitcoin',
+    cmcRsiUrl: 'https://coinmarketcap.com/charts/rsi/',
+    cmcMainPageUrl: 'https://coinmarketcap.com/currencies/bitcoin/',
+    updatedAt: '2026-06-27T12:05:00Z',
+  });
+
+  await storage.close();
+});
+
+test('CoinMarketCapScraper: direct API mode persists CMC chart refs without browser fallback', async () => {
+  const assets = [];
+  const stats = [];
+  const scraper = new CoinMarketCapScraper({
+    storage: {
+      async upsertSpotMarketAsset(asset) {
+        assets.push(asset);
+      },
+      async upsertSpotMarketStats(stat) {
+        stats.push(stat);
+      },
+    },
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          data: {
+            data: [
+              {
+                id: '1',
+                symbol: 'BTC',
+                slug: 'bitcoin',
+                name: 'Bitcoin',
+                price: 60000,
+                price24h: 1.5,
+                rsi: {
+                  rsi1h: 61,
+                  rsi24h: 66,
+                },
+              },
+            ],
+            pagination: {
+              totalPages: 1,
+            },
+          },
+        };
+      },
+    }),
+    browserLauncher: async () => {
+      throw new Error('browser fallback should not run');
+    },
+  });
+
+  const count = await scraper.scrapeRsiData();
+
+  assert.strictEqual(count, 1);
+  assert.strictEqual(assets.length, 1);
+  assert.strictEqual(stats.length, 1);
+  assert.strictEqual(assets[0].cmcMainPageUrl, 'https://coinmarketcap.com/currencies/bitcoin/');
+  assert.strictEqual(assets[0].cmcRsiUrl, 'https://coinmarketcap.com/charts/rsi/');
+  assert.strictEqual(stats[0].symbol, 'BTC-USD');
+  assert.strictEqual(stats[0].rsi1d, 66);
+  assert.strictEqual(stats[0].rsi1h, 61);
+});
+
+test('CoinMarketCapScraper: fetchQuotaInfo parses current plan and usage from key info', async () => {
+  const scraper = new CoinMarketCapScraper({
+    apiKey: 'test-key',
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          data: {
+            plan: {
+              rate_limit_minute: 50,
+              credit_limit_monthly: 15000,
+              credit_limit_monthly_reset: 'In 3 days',
+              credit_limit_monthly_reset_timestamp: '2026-07-01T00:00:00.000Z',
+            },
+            usage: {
+              current_minute: {
+                requests_made: 7,
+                requests_left: 43,
+              },
+              current_month: {
+                credits_used: 12,
+                credits_left: 14988,
+              },
+            },
+          },
+        };
+      },
+    }),
+  });
+
+  const quota = await scraper.fetchQuotaInfo();
+
+  assert.deepStrictEqual(quota, {
+    minuteLimit: 50,
+    minuteRequestsMade: 7,
+    minuteRequestsLeft: 43,
+    monthlyCreditLimit: 15000,
+    monthlyCreditsUsed: 12,
+    monthlyCreditsLeft: 14988,
+    monthlyResetText: 'In 3 days',
+    monthlyResetTimestamp: '2026-07-01T00:00:00.000Z',
+  });
 });

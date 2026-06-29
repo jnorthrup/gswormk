@@ -26,7 +26,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeDrawdown, applyRiskInvariants, classifyRiskState } from '../src/trader/risk.mjs';
+import { computeDrawdown, applyRiskInvariants, classifyRiskState } from '../src/trader/risk.ts';
 
 // ── §13 Drawdown ────────────────────────────────────────────────────────────
 

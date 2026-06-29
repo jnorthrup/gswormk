@@ -28,7 +28,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EPSILON } from '../src/lib/math.mjs';
+import { EPSILON } from '../src/lib/math.ts';
 
 // ── §16 Full pipeline: raw inputs → trade decision ─────────────────────────
 

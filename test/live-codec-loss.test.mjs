@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperBroker } from '../src/trader/paper-broker.mjs';
+import { PaperBroker } from '../src/trader/paper-broker.ts';
 
 test('PaperBroker: validate_only guess orders do not lock assets and compute virtualPnL', () => {
   const broker = new PaperBroker({ initialCash: 10000 });

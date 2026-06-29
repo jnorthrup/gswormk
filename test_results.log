@@ -1,0 +1,1162 @@
+TAP version 13
+# Subtest: simulation persists signals, candles, and quota metrics
+not ok 1 - simulation persists signals, candles, and quota metrics
+  ---
+  duration_ms: 45.519416
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/integration.test.mjs:9:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Invalid Input Error: Attempting to execute an unsuccessful or closed pending query result
+    Error: Catalog Error: Sequence with name signals_seq does not exist!
+  code: 'DUCKDB_NODEJS_ERROR'
+  ...
+# Subtest: computeRsiSplatAndKalman: empty history returns null
+ok 2 - computeRsiSplatAndKalman: empty history returns null
+  ---
+  duration_ms: 1.33925
+  type: 'test'
+  ...
+# Subtest: computeRsiSplatAndKalman: applies Gaussian weights properly
+ok 3 - computeRsiSplatAndKalman: applies Gaussian weights properly
+  ---
+  duration_ms: 0.478667
+  type: 'test'
+  ...
+# Subtest: TraderEngine: getDenoisedRsi draw-through
+not ok 4 - TraderEngine: getDenoisedRsi draw-through
+  ---
+  duration_ms: 52.318167
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-cmc-scraper.test.mjs:52:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Invalid Input Error: Attempting to execute an unsuccessful or closed pending query result
+    Error: Catalog Error: Sequence with name signals_seq does not exist!
+  code: 'DUCKDB_NODEJS_ERROR'
+  ...
+# [Scraper] Pulling CoinMarketCap RSI data directly from the API...
+# [Scraper] Found 1 crypto items in the CMC RSI API.
+# [Scraper] Successfully scraped and upserted 1 spot market stats from CMC.
+# Subtest: SQLite storage: spot market asset refs preserve names and CMC chart links
+not ok 5 - SQLite storage: spot market asset refs preserve names and CMC chart links
+  ---
+  duration_ms: 7.455458
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-cmc-scraper.test.mjs:99:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Invalid Input Error: Attempting to execute an unsuccessful or closed pending query result
+    Error: Catalog Error: Sequence with name signals_seq does not exist!
+  code: 'DUCKDB_NODEJS_ERROR'
+  ...
+# Subtest: CoinMarketCapScraper: direct API mode persists CMC chart refs without browser fallback
+ok 6 - CoinMarketCapScraper: direct API mode persists CMC chart refs without browser fallback
+  ---
+  duration_ms: 0.87425
+  type: 'test'
+  ...
+# Subtest: CoinMarketCapScraper: fetchQuotaInfo parses current plan and usage from key info
+ok 7 - CoinMarketCapScraper: fetchQuotaInfo parses current plan and usage from key info
+  ---
+  duration_ms: 0.418459
+  type: 'test'
+  ...
+# Subtest: PaperBroker: validate_only guess orders do not lock assets and compute virtualPnL
+ok 8 - PaperBroker: validate_only guess orders do not lock assets and compute virtualPnL
+  ---
+  duration_ms: 1.317916
+  type: 'test'
+  ...
+# Subtest: PaperBroker: limit orders lock assets and fill when threshold met
+ok 9 - PaperBroker: limit orders lock assets and fill when threshold met
+  ---
+  duration_ms: 0.532
+  type: 'test'
+  ...
+# Subtest: PaperBroker: GTD limit orders expire and unlock assets
+ok 10 - PaperBroker: GTD limit orders expire and unlock assets
+  ---
+  duration_ms: 1.690042
+  type: 'test'
+  ...
+# [WS][quota] funnel reason=interest:BTC-USD ticker=1 level2=1 tickerOnly=0
+# [WS][quota] Traffic spike. Reducing level2 websocket subscriptions to 2.
+# [WS][quota] funnel reason=traffic-spike ticker=4 level2=2 tickerOnly=2
+# [WS][quota] Discovered websocket budget. Reducing level2 funnel to 3. messages=100 ticks=12 msgTps=10.00 msgTpm=600.0 tickTps=1.20 tickTpm=72.0 window=10.0s channels=ticker:2.00tps,l2_data:8.00tps
+# [WS][quota] funnel reason=quota-discovered ticker=5 level2=3 tickerOnly=2 messages=100 ticks=12 msgTps=10.00 msgTpm=600.0 tickTps=1.20 tickTpm=72.0 window=10.0s channels=ticker:2.00tps,l2_data:8.00tps
+# [WS][quota] Discovered websocket budget. Increasing level2 funnel to 5. messages=30 ticks=8 msgTps=3.00 msgTpm=180.0 tickTps=0.80 tickTpm=48.0 window=10.0s channels=ticker:1.00tps,l2_data:2.00tps
+# [WS][quota] funnel reason=quota-discovered ticker=5 level2=5 tickerOnly=0 messages=30 ticks=8 msgTps=3.00 msgTpm=180.0 tickTps=0.80 tickTpm=48.0 window=10.0s channels=ticker:1.00tps,l2_data:2.00tps
+# [Cache] Miss for BTC-USD. Fetching 5 candles from REST (2026-06-27T10:00:00.000Z to 2026-06-27T10:05:00.000Z)...
+# [Broker] Restored state from /Users/jim/work/gswormk/data/test-paper-wallet-state.json. Cash: $4000.00, Positions: { 'BTC-USD': 0.1 }
+# Subtest: CoinbaseRest: parse products and market data correctly
+ok 11 - CoinbaseRest: parse products and market data correctly
+  ---
+  duration_ms: 0.5375
+  type: 'test'
+  ...
+# Subtest: CoinbaseRest: request quota evidence reports tps and tpm
+ok 12 - CoinbaseRest: request quota evidence reports tps and tpm
+  ---
+  duration_ms: 0.238708
+  type: 'test'
+  ...
+# Subtest: CoinbaseWS: check and emit logic for disinterest bands
+ok 13 - CoinbaseWS: check and emit logic for disinterest bands
+  ---
+  duration_ms: 8.151
+  type: 'test'
+  ...
+# Subtest: CoinbaseWS: bandwidth throttling trims websocket level2 subscriptions without REST polling
+ok 14 - CoinbaseWS: bandwidth throttling trims websocket level2 subscriptions without REST polling
+  ---
+  duration_ms: 0.620166
+  type: 'test'
+  ...
+# Subtest: CoinbaseWS: bootstraps broad ticker coverage with minimum depth funnel before quota discovery
+ok 15 - CoinbaseWS: bootstraps broad ticker coverage with minimum depth funnel before quota discovery
+  ---
+  duration_ms: 1.157125
+  type: 'test'
+  ...
+# Subtest: CoinbaseWS: quota evidence reports message and emitted tick tps/tpm
+ok 16 - CoinbaseWS: quota evidence reports message and emitted tick tps/tpm
+  ---
+  duration_ms: 0.470542
+  type: 'test'
+  ...
+# Subtest: CoinbaseWS: discovered quota routes depth subscriptions into highest-interest funnel
+ok 17 - CoinbaseWS: discovered quota routes depth subscriptions into highest-interest funnel
+  ---
+  duration_ms: 1.429916
+  type: 'test'
+  ...
+# Subtest: CoinbaseWS: discovered spare quota expands depth funnel coverage
+ok 18 - CoinbaseWS: discovered spare quota expands depth funnel coverage
+  ---
+  duration_ms: 0.542417
+  type: 'test'
+  ...
+# Subtest: interpolateCandleGaps: fill linear price & volume gaps
+ok 19 - interpolateCandleGaps: fill linear price & volume gaps
+  ---
+  duration_ms: 1.127583
+  type: 'test'
+  ...
+# Subtest: interpolateCandleGaps: uses min/max/mean aggregate price anchors when present
+ok 20 - interpolateCandleGaps: uses min/max/mean aggregate price anchors when present
+  ---
+  duration_ms: 0.458083
+  type: 'test'
+  ...
+# Subtest: DrawThroughCacheManager: draw through REST and auto-interpolate gaps
+ok 21 - DrawThroughCacheManager: draw through REST and auto-interpolate gaps
+  ---
+  duration_ms: 3.125375
+  type: 'test'
+  ...
+# Subtest: DrawThroughCacheManager: live cache miss draws through tick candle without REST by default
+ok 22 - DrawThroughCacheManager: live cache miss draws through tick candle without REST by default
+  ---
+  duration_ms: 0.310583
+  type: 'test'
+  ...
+# Subtest: PaperBroker: load and save state to JSON file
+ok 23 - PaperBroker: load and save state to JSON file
+  ---
+  duration_ms: 3.147708
+  type: 'test'
+  ...
+# Subtest: computeRSI: basic Wilder RSI calculation
+ok 24 - computeRSI: basic Wilder RSI calculation
+  ---
+  duration_ms: 2.323541
+  type: 'test'
+  ...
+# Subtest: computeRSI: insufficient data returns null
+ok 25 - computeRSI: insufficient data returns null
+  ---
+  duration_ms: 0.191041
+  type: 'test'
+  ...
+# Subtest: TraderEngine: regime classifier ranks the dominant environment and scales Kelly/trigger
+not ok 26 - TraderEngine: regime classifier ranks the dominant environment and scales Kelly/trigger
+  ---
+  duration_ms: 3.816291
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:129:1'
+  failureType: 'testCodeFailure'
+  error: 'variance is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.computeSignal (file:///Users/jim/work/gswormk/src/trader/engine.mjs:634:14)
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:160:27)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: TraderEngine: regime profiles override scaling multipliers without changing ranking logic
+not ok 27 - TraderEngine: regime profiles override scaling multipliers without changing ranking logic
+  ---
+  duration_ms: 0.452792
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:178:1'
+  failureType: 'testCodeFailure'
+  error: 'variance is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.computeSignal (file:///Users/jim/work/gswormk/src/trader/engine.mjs:634:14)
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:195:25)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: TraderEngine: multiscale attention activates on longer candle history and persists to storage
+not ok 28 - TraderEngine: multiscale attention activates on longer candle history and persists to storage
+  ---
+  duration_ms: 1.676042
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:209:1'
+  failureType: 'testCodeFailure'
+  error: 'variance is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.computeSignal (file:///Users/jim/work/gswormk/src/trader/engine.mjs:634:14)
+    TraderEngine.processBatch (file:///Users/jim/work/gswormk/src/trader/engine.mjs:466:27)
+    async TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:229:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: TraderEngine: manageSnareGrid widens snare spacing by dominant regime
+not ok 29 - TraderEngine: manageSnareGrid widens snare spacing by dominant regime
+  ---
+  duration_ms: 0.719708
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:240:1'
+  failureType: 'testCodeFailure'
+  error: 'clamp is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.manageSnareGrid (file:///Users/jim/work/gswormk/src/trader/engine.mjs:780:31)
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:260:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: TraderEngine: manageSnareGrid scales snare quantity with advantage probability
+not ok 30 - TraderEngine: manageSnareGrid scales snare quantity with advantage probability
+  ---
+  duration_ms: 0.537292
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:273:1'
+  failureType: 'testCodeFailure'
+  error: 'clamp is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.manageSnareGrid (file:///Users/jim/work/gswormk/src/trader/engine.mjs:780:31)
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:288:7)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: TraderEngine: processBatch persists dominantRegime and adjusted trigger to storage logs
+not ok 31 - TraderEngine: processBatch persists dominantRegime and adjusted trigger to storage logs
+  ---
+  duration_ms: 0.381084
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:305:1'
+  failureType: 'testCodeFailure'
+  error: 'variance is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.computeSignal (file:///Users/jim/work/gswormk/src/trader/engine.mjs:634:14)
+    TraderEngine.processBatch (file:///Users/jim/work/gswormk/src/trader/engine.mjs:466:27)
+    async TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:323:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: TraderEngine: processBatch persists denoised RSI and Einstein attention when stats are available
+not ok 32 - TraderEngine: processBatch persists denoised RSI and Einstein attention when stats are available
+  ---
+  duration_ms: 0.54025
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:335:1'
+  failureType: 'testCodeFailure'
+  error: 'variance is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.computeSignal (file:///Users/jim/work/gswormk/src/trader/engine.mjs:634:14)
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:358:27)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: TraderEngine: rebalance execution urgency becomes more aggressive as advantage probability rises
+not ok 33 - TraderEngine: rebalance execution urgency becomes more aggressive as advantage probability rises
+  ---
+  duration_ms: 2.657917
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:383:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(lowResult.accepted)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:421:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: TraderEngine: rebalance switches between maker and taker execution modes from advantage probability
+not ok 34 - TraderEngine: rebalance switches between maker and taker execution modes from advantage probability
+  ---
+  duration_ms: 0.631583
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:427:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(makerResult.accepted)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-regime-funnel.test.mjs:468:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: PaperBroker: auto_hedge posts linked exit bracket on fill
+ok 35 - PaperBroker: auto_hedge posts linked exit bracket on fill
+  ---
+  duration_ms: 1.608209
+  type: 'test'
+  ...
+# Subtest: TraderEngine: manageSnareGrid places Fib-scaled BUY limit orders
+not ok 36 - TraderEngine: manageSnareGrid places Fib-scaled BUY limit orders
+  ---
+  duration_ms: 0.493
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-snare-grid.test.mjs:67:1'
+  failureType: 'testCodeFailure'
+  error: 'clamp is not defined'
+  code: 'ERR_TEST_FAILURE'
+  name: 'ReferenceError'
+  stack: |-
+    TraderEngine.manageSnareGrid (file:///Users/jim/work/gswormk/src/trader/engine.mjs:780:31)
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-snare-grid.test.mjs:95:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: TraderEngine: confidence gating controls limit order posting
+not ok 37 - TraderEngine: confidence gating controls limit order posting
+  ---
+  duration_ms: 0.620042
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-snare-grid.test.mjs:112:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'INSUFFICIENT_DATA'
+    - 'CONFIDENCE_GATE_BLOCKED'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'CONFIDENCE_GATE_BLOCKED'
+  actual: 'INSUFFICIENT_DATA'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-snare-grid.test.mjs:140:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# [Sync][quota] segment symbol=SOL-USD cycle=1 hot=none deferred=none estimatedRequests=1 estimatedCandles=168 throttleMs=0
+# Subtest: CoinbaseSync: fetch and filter USD spot products correctly
+not ok 38 - CoinbaseSync: fetch and filter USD spot products correctly
+  ---
+  duration_ms: 2.174875
+  type: 'test'
+  location: '/Users/jim/work/gswormk/test/live-warmup-sync.test.mjs:94:1'
+  failureType: 'testCodeFailure'
+  error: 'excludes stablecoin base pair (USDT)'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///Users/jim/work/gswormk/test/live-warmup-sync.test.mjs:116:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# [Sync][rotation] refreshed spot universe symbols=2 intervalMs=900000
+# [Sync][rotation] refreshed CMC charts/stats count=42 intervalMs=900000 proMinute=3/50 proMinuteLeft=47 proMonthUsed=5/15000 proMonthLeft=14995
+# [Sync][rotation] refreshed spot universe symbols=2 intervalMs=900000
+# [Sync][rotation] refreshed CMC charts/stats count=42 intervalMs=900000 proMinute=3/50 proMinuteLeft=47 proMonthUsed=5/15000 proMonthLeft=14995
+# [Engine] Warming up symbol states from database history...
+# [Engine] Warmed up 15 BTC returns for tail dependence.
+# [Engine] Warmed up 10 returns for BTC-USD (in USD). Last price: $60050
+# Subtest: CoinbaseSync: syncPairCandles fetches, merges and interpolates
+ok 39 - CoinbaseSync: syncPairCandles fetches, merges and interpolates
+  ---
+  duration_ms: 411.954375
+  type: 'test'
+  ...
+# Subtest: CoinbaseSync: sync plan packs hot 1m with rotating deferred 5m+ refreshes
+ok 40 - CoinbaseSync: sync plan packs hot 1m with rotating deferred 5m+ refreshes
+  ---
+  duration_ms: 0.473958
+  type: 'test'
+  ...
+# Subtest: CoinbaseSync: quarter-hour rotation refreshes the spot universe and CMC chart surface on cadence
+ok 41 - CoinbaseSync: quarter-hour rotation refreshes the spot universe and CMC chart surface on cadence
+  ---
+  duration_ms: 0.334167
+  type: 'test'
+  ...
+# Subtest: TraderEngine: warmup pre-populates return buffers from database history
+ok 42 - TraderEngine: warmup pre-populates return buffers from database history
+  ---
+  duration_ms: 0.495083
+  type: 'test'
+  ...
+# Subtest: renderStatusReport includes asset names, CMC chart refs, and advantage fields
+ok 43 - renderStatusReport includes asset names, CMC chart refs, and advantage fields
+  ---
+  duration_ms: 13.373667
+  type: 'test'
+  ...
+# Subtest: computeObi stays inside [-1, 1]
+ok 44 - computeObi stays inside [-1, 1]
+  ---
+  duration_ms: 0.405958
+  type: 'test'
+  ...
+# Subtest: kalmanStep produces finite innovation z-score
+ok 45 - kalmanStep produces finite innovation z-score
+  ---
+  duration_ms: 0.12575
+  type: 'test'
+  ...
+# Subtest: tail dependence grows for co-crashing series
+ok 46 - tail dependence grows for co-crashing series
+  ---
+  duration_ms: 1.75625
+  type: 'test'
+  ...
+# Subtest: trigger shrinks as downside variance rises
+ok 47 - trigger shrinks as downside variance rises
+  ---
+  duration_ms: 0.203833
+  type: 'test'
+  ...
+# Subtest: kelly increases with drift and decreases with tail dependence
+ok 48 - kelly increases with drift and decreases with tail dependence
+  ---
+  duration_ms: 0.221584
+  type: 'test'
+  ...
+# Subtest: multiscale attention activates across longer candle histories
+ok 49 - multiscale attention activates across longer candle histories
+  ---
+  duration_ms: 7.708958
+  type: 'test'
+  ...
+# Subtest: einstein attention tilts Kelly and trigger in the direction supported by denoised RSI
+ok 50 - einstein attention tilts Kelly and trigger in the direction supported by denoised RSI
+  ---
+  duration_ms: 0.608375
+  type: 'test'
+  ...
+# Subtest: §3.1 midprice is arithmetic mean of best bid and best ask
+ok 51 - §3.1 midprice is arithmetic mean of best bid and best ask
+  ---
+  duration_ms: 0.570417
+  type: 'test'
+  ...
+# Subtest: §3.1 relative spread = (ask - bid) / mid
+ok 52 - §3.1 relative spread = (ask - bid) / mid
+  ---
+  duration_ms: 0.481584
+  type: 'test'
+  ...
+# Subtest: §3.1 effective friction c = s/2 + fee + slippage matches spec decomposition
+ok 53 - §3.1 effective friction c = s/2 + fee + slippage matches spec decomposition
+  ---
+  duration_ms: 0.189416
+  type: 'test'
+  ...
+# Subtest: §3.1 effective friction is always positive for valid quotes
+ok 54 - §3.1 effective friction is always positive for valid quotes
+  ---
+  duration_ms: 0.086625
+  type: 'test'
+  ...
+# Subtest: §3.2 raw OBI is exactly (B-A)/(B+A+ε) for single-level symmetric book
+ok 55 - §3.2 raw OBI is exactly (B-A)/(B+A+ε) for single-level symmetric book
+  ---
+  duration_ms: 0.416375
+  type: 'test'
+  ...
+# Subtest: §3.2 OBI = 0 for perfectly balanced book
+ok 56 - §3.2 OBI = 0 for perfectly balanced book
+  ---
+  duration_ms: 0.167583
+  type: 'test'
+  ...
+# Subtest: §3.2 OBI ∈ [-1, 1] for extreme imbalance
+ok 57 - §3.2 OBI ∈ [-1, 1] for extreme imbalance
+  ---
+  duration_ms: 0.125709
+  type: 'test'
+  ...
+# Subtest: §3.2 multi-level depth weighting: deeper levels within shell contribute
+ok 58 - §3.2 multi-level depth weighting: deeper levels within shell contribute
+  ---
+  duration_ms: 0.257709
+  type: 'test'
+  ...
+# Subtest: §3.3 Kalman innovation = observed - predicted
+ok 59 - §3.3 Kalman innovation = observed - predicted
+  ---
+  duration_ms: 0.741583
+  type: 'test'
+  ...
+# Subtest: §3.3 Kalman gain K = P_predicted / S
+ok 60 - §3.3 Kalman gain K = P_predicted / S
+  ---
+  duration_ms: 4.063792
+  type: 'test'
+  ...
+# Subtest: §3.3 Kalman posterior variance P_t = (1 - K) * P_predicted
+ok 61 - §3.3 Kalman posterior variance P_t = (1 - K) * P_predicted
+  ---
+  duration_ms: 0.5535
+  type: 'test'
+  ...
+# Subtest: §3.3 innovation z-score = y / sqrt(S)
+ok 62 - §3.3 innovation z-score = y / sqrt(S)
+  ---
+  duration_ms: 0.149666
+  type: 'test'
+  ...
+# Subtest: §3.3 Kalman converges: repeated observations shrink P
+ok 63 - §3.3 Kalman converges: repeated observations shrink P
+  ---
+  duration_ms: 0.167958
+  type: 'test'
+  ...
+# Subtest: §3.3 observation target blends midprice and microprice
+ok 64 - §3.3 observation target blends midprice and microprice
+  ---
+  duration_ms: 0.118791
+  type: 'test'
+  ...
+# Subtest: §3.4 downside semivariance ignores upside deviations
+ok 65 - §3.4 downside semivariance ignores upside deviations
+  ---
+  duration_ms: 0.131083
+  type: 'test'
+  ...
+# Subtest: §3.4 downside semivariance ≤ total variance
+ok 66 - §3.4 downside semivariance ≤ total variance
+  ---
+  duration_ms: 0.125416
+  type: 'test'
+  ...
+# Subtest: §3.4 computeDownsideSemivariance floors at ε_σ = 1e-9
+ok 67 - §3.4 computeDownsideSemivariance floors at ε_σ = 1e-9
+  ---
+  duration_ms: 1.4935
+  type: 'test'
+  ...
+# Subtest: §3.4 downside semivariance for pure downside series
+ok 68 - §3.4 downside semivariance for pure downside series
+  ---
+  duration_ms: 0.072292
+  type: 'test'
+  ...
+# Subtest: §3.5 tail dependence = 1.0 for perfectly co-crashing series
+ok 69 - §3.5 tail dependence = 1.0 for perfectly co-crashing series
+  ---
+  duration_ms: 0.221292
+  type: 'test'
+  ...
+# Subtest: §3.5 tail dependence ≈ 0 for independent series
+ok 70 - §3.5 tail dependence ≈ 0 for independent series
+  ---
+  duration_ms: 0.078084
+  type: 'test'
+  ...
+# Subtest: §3.5 tail dependence requires minimum sample size
+ok 71 - §3.5 tail dependence requires minimum sample size
+  ---
+  duration_ms: 0.031917
+  type: 'test'
+  ...
+# Subtest: §3.5 tail dependence ∈ [0, 1]
+ok 72 - §3.5 tail dependence ∈ [0, 1]
+  ---
+  duration_ms: 0.12375
+  type: 'test'
+  ...
+# Subtest: §4 drift synthesis = (obi + innovZ) * alignment * cacheQuality
+ok 73 - §4 drift synthesis = (obi + innovZ) * alignment * cacheQuality
+  ---
+  duration_ms: 0.467125
+  type: 'test'
+  ...
+# Subtest: §4 drift synthesis = 0 when alignment = 0
+ok 74 - §4 drift synthesis = 0 when alignment = 0
+  ---
+  duration_ms: 0.074417
+  type: 'test'
+  ...
+# Subtest: §4 drift synthesis = 0 when cacheQuality = 0
+ok 75 - §4 drift synthesis = 0 when cacheQuality = 0
+  ---
+  duration_ms: 0.050041
+  type: 'test'
+  ...
+# Subtest: §4 drift synthesis preserves sign of raw drift
+ok 76 - §4 drift synthesis preserves sign of raw drift
+  ---
+  duration_ms: 4.847083
+  type: 'test'
+  ...
+# Subtest: §4 drift synthesis is linear in raw drift components
+ok 77 - §4 drift synthesis is linear in raw drift components
+  ---
+  duration_ms: 0.20125
+  type: 'test'
+  ...
+# Subtest: §5 kelly = μ_eff / (σ²⁻ + ε) · (1 - λ_BTC) [SPEC FORMULA]
+ok 78 - §5 kelly = μ_eff / (σ²⁻ + ε) · (1 - λ_BTC) [SPEC FORMULA]
+  ---
+  duration_ms: 7.240708
+  type: 'test'
+  ...
+# Subtest: §5 kelly → 0 as tail dependence → 1 (crash contagion extinction)
+ok 79 - §5 kelly → 0 as tail dependence → 1 (crash contagion extinction)
+  ---
+  duration_ms: 0.331708
+  type: 'test'
+  ...
+# Subtest: §5 kelly = 0 for zero drift
+ok 80 - §5 kelly = 0 for zero drift
+  ---
+  duration_ms: 0.134583
+  type: 'test'
+  ...
+# Subtest: §5 kelly < 0 for negative drift (no long position)
+ok 81 - §5 kelly < 0 for negative drift (no long position)
+  ---
+  duration_ms: 0.108
+  type: 'test'
+  ...
+# Subtest: §5 kelly scales inversely with downside semivariance
+ok 82 - §5 kelly scales inversely with downside semivariance
+  ---
+  duration_ms: 1.994084
+  type: 'test'
+  ...
+# Subtest: §5 portfolio weights sum ≤ ρ (reinvestment budget)
+ok 83 - §5 portfolio weights sum ≤ ρ (reinvestment budget)
+  ---
+  duration_ms: 0.170042
+  type: 'test'
+  ...
+# Subtest: §5 negative kelly assets get zero weight (spot-only long)
+ok 84 - §5 negative kelly assets get zero weight (spot-only long)
+  ---
+  duration_ms: 0.06475
+  type: 'test'
+  ...
+# Subtest: §5 hard cap: no single position exceeds w_max
+ok 85 - §5 hard cap: no single position exceeds w_max
+  ---
+  duration_ms: 0.0655
+  type: 'test'
+  ...
+# Subtest: §5 all zero kelly yields all zero weights
+ok 86 - §5 all zero kelly yields all zero weights
+  ---
+  duration_ms: 0.286
+  type: 'test'
+  ...
+# Subtest: §5 spec portfolio normalization: w* = ρ · max(0,k) / Σmax(0,k)
+ok 87 - §5 spec portfolio normalization: w* = ρ · max(0,k) / Σmax(0,k)
+  ---
+  duration_ms: 0.348167
+  type: 'test'
+  ...
+# Subtest: §6 no-trade band h = (c / (σ²⁻ + ε))^(1/3)
+ok 88 - §6 no-trade band h = (c / (σ²⁻ + ε))^(1/3)
+  ---
+  duration_ms: 0.3905
+  type: 'test'
+  ...
+# Subtest: §6 trigger shrinks as volatility increases
+ok 89 - §6 trigger shrinks as volatility increases
+  ---
+  duration_ms: 8.291583
+  type: 'test'
+  ...
+# Subtest: §6 trigger grows with transaction cost
+ok 90 - §6 trigger grows with transaction cost
+  ---
+  duration_ms: 0.214875
+  type: 'test'
+  ...
+# Subtest: §6 trigger is finite even for near-zero volatility (ε floor)
+ok 91 - §6 trigger is finite even for near-zero volatility (ε floor)
+  ---
+  duration_ms: 0.139666
+  type: 'test'
+  ...
+# Subtest: §6 trade condition: |w* - w| > h triggers rebalance
+ok 92 - §6 trade condition: |w* - w| > h triggers rebalance
+  ---
+  duration_ms: 0.198125
+  type: 'test'
+  ...
+# Subtest: §6 trade condition: |w* - w| ≤ h suppresses rebalance
+ok 93 - §6 trade condition: |w* - w| ≤ h suppresses rebalance
+  ---
+  duration_ms: 0.183458
+  type: 'test'
+  ...
+# Subtest: §6 decision vector captures notional direction
+ok 94 - §6 decision vector captures notional direction
+  ---
+  duration_ms: 0.238875
+  type: 'test'
+  ...
+# Subtest: §7 urgency = σ(|innovationZ|) via logistic function
+ok 95 - §7 urgency = σ(|innovationZ|) via logistic function
+  ---
+  duration_ms: 0.562333
+  type: 'test'
+  ...
+# Subtest: §7 urgency ∈ (0.5, 1) for positive innovation magnitude
+ok 96 - §7 urgency ∈ (0.5, 1) for positive innovation magnitude
+  ---
+  duration_ms: 0.445458
+  type: 'test'
+  ...
+# Subtest: §7 urgency = 0.5 when innovation = 0 (no signal)
+ok 97 - §7 urgency = 0.5 when innovation = 0 (no signal)
+  ---
+  duration_ms: 0.136
+  type: 'test'
+  ...
+# Subtest: §7 urgency is monotonically increasing in |innovationZ|
+ok 98 - §7 urgency is monotonically increasing in |innovationZ|
+  ---
+  duration_ms: 0.138333
+  type: 'test'
+  ...
+# Subtest: §7 buy execution price: p_exec = min(ask, mid + η*(ask - mid))
+ok 99 - §7 buy execution price: p_exec = min(ask, mid + η*(ask - mid))
+  ---
+  duration_ms: 0.281417
+  type: 'test'
+  ...
+# Subtest: §7 sell execution price: p_exec = max(bid, mid - η*(mid - bid))
+ok 100 - §7 sell execution price: p_exec = max(bid, mid - η*(mid - bid))
+  ---
+  duration_ms: 0.187375
+  type: 'test'
+  ...
+# Subtest: §7 at zero urgency, buy price = mid (maximum passivity)
+ok 101 - §7 at zero urgency, buy price = mid (maximum passivity)
+  ---
+  duration_ms: 0.480375
+  type: 'test'
+  ...
+# Subtest: §7 at full urgency, buy price approaches ask (maximum aggression)
+ok 102 - §7 at full urgency, buy price approaches ask (maximum aggression)
+  ---
+  duration_ms: 0.145417
+  type: 'test'
+  ...
+# Subtest: §7 visible-depth clip: Q_slice = min(Q, κ * D_visible)
+ok 103 - §7 visible-depth clip: Q_slice = min(Q, κ * D_visible)
+  ---
+  duration_ms: 0.747875
+  type: 'test'
+  ...
+# Subtest: §7 visible-depth clip: passes through when Q < κ*D
+ok 104 - §7 visible-depth clip: passes through when Q < κ*D
+  ---
+  duration_ms: 0.852959
+  type: 'test'
+  ...
+# Subtest: §8 regime vector contains exactly [obi, innovZ, rvDown, tailDep] components
+ok 105 - §8 regime vector contains exactly [obi, innovZ, rvDown, tailDep] components
+  ---
+  duration_ms: 0.981708
+  type: 'test'
+  ...
+# Subtest: §8 regime is continuous: no categorical state labels
+ok 106 - §8 regime is continuous: no categorical state labels
+  ---
+  duration_ms: 0.104167
+  type: 'test'
+  ...
+# Subtest: §8 policy outputs are deterministic functions of regime vector
+ok 107 - §8 policy outputs are deterministic functions of regime vector
+  ---
+  duration_ms: 0.081833
+  type: 'test'
+  ...
+# Subtest: §9 cache quality = 1.0 when fresh, no gaps, monotone, checksum pass
+ok 108 - §9 cache quality = 1.0 when fresh, no gaps, monotone, checksum pass
+  ---
+  duration_ms: 1.342958
+  type: 'test'
+  ...
+# Subtest: §9 cache quality < 1.0 when gaps exist
+ok 109 - §9 cache quality < 1.0 when gaps exist
+  ---
+  duration_ms: 0.165167
+  type: 'test'
+  ...
+# Subtest: §9 cache quality < 1.0 on cache miss
+ok 110 - §9 cache quality < 1.0 on cache miss
+  ---
+  duration_ms: 0.053583
+  type: 'test'
+  ...
+# Subtest: §9 cache quality ∈ [0, 1]
+ok 111 - §9 cache quality ∈ [0, 1]
+  ---
+  duration_ms: 0.070708
+  type: 'test'
+  ...
+# Subtest: §9 cache quality is monotonically decreasing in gap count
+ok 112 - §9 cache quality is monotonically decreasing in gap count
+  ---
+  duration_ms: 0.119084
+  type: 'test'
+  ...
+# Subtest: §9 cache freshness is bar-relative, not absolute time
+ok 113 - §9 cache freshness is bar-relative, not absolute time
+  ---
+  duration_ms: 0.056125
+  type: 'test'
+  ...
+# Subtest: §9 cache staleness triggers fetch for missing interval only
+ok 114 - §9 cache staleness triggers fetch for missing interval only
+  ---
+  duration_ms: 0.09525
+  type: 'test'
+  ...
+# Subtest: §9 candle record is keyed by (symbol, granularity, barStart)
+ok 115 - §9 candle record is keyed by (symbol, granularity, barStart)
+  ---
+  duration_ms: 0.126542
+  type: 'test'
+  ...
+# Subtest: §9 idempotent merge: reinserting same candle preserves data
+ok 116 - §9 idempotent merge: reinserting same candle preserves data
+  ---
+  duration_ms: 0.654209
+  type: 'test'
+  ...
+# Subtest: §10 quota efficacy = H / (H + M)
+ok 117 - §10 quota efficacy = H / (H + M)
+  ---
+  duration_ms: 0.873083
+  type: 'test'
+  ...
+# Subtest: §10 quota efficacy = 1.0 for perfect cache
+ok 118 - §10 quota efficacy = 1.0 for perfect cache
+  ---
+  duration_ms: 0.079958
+  type: 'test'
+  ...
+# Subtest: §10 quota efficacy = 0.0 for complete cache miss
+ok 119 - §10 quota efficacy = 0.0 for complete cache miss
+  ---
+  duration_ms: 0.050917
+  type: 'test'
+  ...
+# Subtest: §10 gap dependence = 1 - G/(H+M+G)
+ok 120 - §10 gap dependence = 1 - G/(H+M+G)
+  ---
+  duration_ms: 0.060375
+  type: 'test'
+  ...
+# Subtest: §10 gap dependence = 1.0 when no gaps
+ok 121 - §10 gap dependence = 1.0 when no gaps
+  ---
+  duration_ms: 0.768792
+  type: 'test'
+  ...
+# Subtest: §10 ws coverage = U / (U + M)
+ok 122 - §10 ws coverage = U / (U + M)
+  ---
+  duration_ms: 0.16275
+  type: 'test'
+  ...
+# Subtest: §10 decision quality invariance: Δ_decision within tolerance
+ok 123 - §10 decision quality invariance: Δ_decision within tolerance
+  ---
+  duration_ms: 0.201166
+  type: 'test'
+  ...
+# Subtest: §10 API budget is cumulative count of REST calls
+ok 124 - §10 API budget is cumulative count of REST calls
+  ---
+  duration_ms: 0.069542
+  type: 'test'
+  ...
+# Subtest: §11 perfect alignment: identical live and replay → a = 1.0
+ok 125 - §11 perfect alignment: identical live and replay → a = 1.0
+  ---
+  duration_ms: 0.445667
+  type: 'test'
+  ...
+# Subtest: §11 alignment = exp(-d) with α₁=0.5 α₂=0.3 α₃=0.2 [SPEC FORMULA]
+ok 126 - §11 alignment = exp(-d) with α₁=0.5 α₂=0.3 α₃=0.2 [SPEC FORMULA]
+  ---
+  duration_ms: 0.146875
+  type: 'test'
+  ...
+# Subtest: §11 alignment decreases with increasing live-replay divergence
+ok 127 - §11 alignment decreases with increasing live-replay divergence
+  ---
+  duration_ms: 0.881709
+  type: 'test'
+  ...
+# Subtest: §11 alignment can go below 0.2 for extreme divergence [SPEC: no floor]
+ok 128 - §11 alignment can go below 0.2 for extreme divergence [SPEC: no floor]
+  ---
+  duration_ms: 0.087833
+  type: 'test'
+  ...
+# Subtest: §11 alignment ∈ (0, 1]
+ok 129 - §11 alignment ∈ (0, 1]
+  ---
+  duration_ms: 0.145958
+  type: 'test'
+  ...
+# Subtest: §11 decision gating: w* ← a_align * w*
+ok 130 - §11 decision gating: w* ← a_align * w*
+  ---
+  duration_ms: 0.051875
+  type: 'test'
+  ...
+# Subtest: §11 decision gating is multiplicative, not additive
+ok 131 - §11 decision gating is multiplicative, not additive
+  ---
+  duration_ms: 0.102042
+  type: 'test'
+  ...
+# Subtest: §12 buy: units increase, cash decreases by gross
+ok 132 - §12 buy: units increase, cash decreases by gross
+  ---
+  duration_ms: 1.412125
+  type: 'test'
+  ...
+# Subtest: §12 sell: units decrease, cash increases by gross
+ok 133 - §12 sell: units decrease, cash increases by gross
+  ---
+  duration_ms: 0.44925
+  type: 'test'
+  ...
+# Subtest: §12 NAV = cash + Σ(units_i * m_i)
+ok 134 - §12 NAV = cash + Σ(units_i * m_i)
+  ---
+  duration_ms: 0.137583
+  type: 'test'
+  ...
+# Subtest: §12 portfolio weight = units * price / NAV
+ok 135 - §12 portfolio weight = units * price / NAV
+  ---
+  duration_ms: 0.142541
+  type: 'test'
+  ...
+# Subtest: §12 peak NAV tracks running maximum
+ok 136 - §12 peak NAV tracks running maximum
+  ---
+  duration_ms: 0.061792
+  type: 'test'
+  ...
+# Subtest: §12 buy rejected when insufficient cash
+ok 137 - §12 buy rejected when insufficient cash
+  ---
+  duration_ms: 0.055417
+  type: 'test'
+  ...
+# Subtest: §12 sell rejected when insufficient units
+ok 138 - §12 sell rejected when insufficient units
+  ---
+  duration_ms: 0.048584
+  type: 'test'
+  ...
+# Subtest: §12 NAV conservation: NAV before = NAV after for zero-spread execution
+ok 139 - §12 NAV conservation: NAV before = NAV after for zero-spread execution
+  ---
+  duration_ms: 0.0655
+  type: 'test'
+  ...
+# Subtest: §12 multi-asset NAV sums across all positions
+ok 140 - §12 multi-asset NAV sums across all positions
+  ---
+  duration_ms: 0.400791
+  type: 'test'
+  ...
+# Subtest: §13 drawdown = 1 - NAV/peakNAV
+ok 141 - §13 drawdown = 1 - NAV/peakNAV
+  ---
+  duration_ms: 0.552583
+  type: 'test'
+  ...
+# Subtest: §13 drawdown = 0 at peak
+ok 142 - §13 drawdown = 0 at peak
+  ---
+  duration_ms: 0.309667
+  type: 'test'
+  ...
+# Subtest: §13 drawdown = 0 when NAV exceeds peak (new high)
+ok 143 - §13 drawdown = 0 when NAV exceeds peak (new high)
+  ---
+  duration_ms: 0.058583
+  type: 'test'
+  ...
+# Subtest: §13 drawdown ∈ [0, 1]
+ok 144 - §13 drawdown ∈ [0, 1]
+  ---
+  duration_ms: 0.079375
+  type: 'test'
+  ...
+# Subtest: §13 drawdown halt: all targets → 0 when DD > DD_max
+ok 145 - §13 drawdown halt: all targets → 0 when DD > DD_max
+  ---
+  duration_ms: 0.096375
+  type: 'test'
+  ...
+# Subtest: §13 no halt when drawdown is within limit
+ok 146 - §13 no halt when drawdown is within limit
+  ---
+  duration_ms: 0.064959
+  type: 'test'
+  ...
+# Subtest: §13 concentration: w_i ≤ w_max after risk invariants
+ok 147 - §13 concentration: w_i ≤ w_max after risk invariants
+  ---
+  duration_ms: 0.05
+  type: 'test'
+  ...
+# Subtest: §13 risk state HALT when drawdown exceeds max
+ok 148 - §13 risk state HALT when drawdown exceeds max
+  ---
+  duration_ms: 0.050667
+  type: 'test'
+  ...
+# Subtest: §13 risk state TRIM when weight at concentration limit
+ok 149 - §13 risk state TRIM when weight at concentration limit
+  ---
+  duration_ms: 0.275375
+  type: 'test'
+  ...
+# Subtest: §13 risk state OK when within all limits
+ok 150 - §13 risk state OK when within all limits
+  ---
+  duration_ms: 0.649042
+  type: 'test'
+  ...
+# Subtest: §13 crash contagion: λ→1 drives kelly→0 and therefore w*→0
+ok 151 - §13 crash contagion: λ→1 drives kelly→0 and therefore w*→0
+  ---
+  duration_ms: 0.213583
+  type: 'test'
+  ...
+# Subtest: §13 semivariance floor: σ²⁻ ≥ ε_σ prevents division blowup
+ok 152 - §13 semivariance floor: σ²⁻ ≥ ε_σ prevents division blowup
+  ---
+  duration_ms: 0.17175
+  type: 'test'
+  ...
+# Subtest: §16 compact control summary: complete pipeline produces valid trade decision
+ok 153 - §16 compact control summary: complete pipeline produces valid trade decision
+  ---
+  duration_ms: 0.447541
+  type: 'test'
+  ...
+# Subtest: §16 full pipeline: negative drift → zero weight → no trade
+ok 154 - §16 full pipeline: negative drift → zero weight → no trade
+  ---
+  duration_ms: 0.079458
+  type: 'test'
+  ...
+# Subtest: §16 full pipeline: high tail dependence shrinks kelly proportionally
+ok 155 - §16 full pipeline: high tail dependence shrinks kelly proportionally
+  ---
+  duration_ms: 0.055
+  type: 'test'
+  ...
+# Subtest: §16 full pipeline: zero alignment kills signal entirely
+ok 156 - §16 full pipeline: zero alignment kills signal entirely
+  ---
+  duration_ms: 0.04675
+  type: 'test'
+  ...
+# Subtest: §16 multi-asset normalization: weights sum ≤ ρ
+ok 157 - §16 multi-asset normalization: weights sum ≤ ρ
+  ---
+  duration_ms: 0.101917
+  type: 'test'
+  ...
+# Subtest: §16 EPSILON is small positive constant
+ok 158 - §16 EPSILON is small positive constant
+  ---
+  duration_ms: 0.042291
+  type: 'test'
+  ...
+1..158
+# tests 158
+# suites 0
+# pass 143
+# fail 15
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 606.357625

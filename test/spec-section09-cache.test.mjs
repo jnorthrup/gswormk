@@ -22,8 +22,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { quotaQuality } from '../src/trader/signals.mjs';
-import { DrawThroughCacheManager } from '../src/trader/cache-manager.mjs';
+import { quotaQuality } from '../src/trader/signals.ts';
+import { DrawThroughCacheManager } from '../src/trader/cache-manager.ts';
 
 // ── §9 Cache quality confidence ─────────────────────────────────────────────
 

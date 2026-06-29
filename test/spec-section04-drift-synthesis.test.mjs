@@ -15,7 +15,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { synthesizeDrift } from '../src/trader/signals.mjs';
+import { synthesizeDrift } from '../src/trader/signals.ts';
 
 test('§4 drift synthesis = (obi + innovZ) * alignment * cacheQuality', () => {
   const obi = 0.3;

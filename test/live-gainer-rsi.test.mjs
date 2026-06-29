@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeRSI } from '../src/feeds/coinbase-sync.mjs';
+import { computeRSI } from '../src/feeds/coinbase-sync.ts';
 
 // Mock storage for sync stats verification
 class MockStorage {

@@ -14,8 +14,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { induceTrigger } from '../src/trader/signals.mjs';
-import { buildDecisionVector } from '../src/trader/optimizer.mjs';
+import { induceTrigger } from '../src/trader/signals.ts';
+import { buildDecisionVector } from '../src/trader/optimizer.ts';
 
 test('§6 no-trade band h = (c / (σ²⁻ + ε))^(1/3)', () => {
   const c = 0.001;

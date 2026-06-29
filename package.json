@@ -5,12 +5,34 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build:local": "node --check src/cli.mjs && node --check src/trader/engine.mjs && node --check src/storage/sqlite-storage.mjs && node --check src/storage/duckdb-storage.mjs",
-    "simulate": "node src/cli.mjs simulate",
-    "status": "node src/cli.mjs status",
-    "test": "node --test"
+    "dev": "tsx src/cli.ts",
+    "trade": "tsx src/cli.ts trade",
+    "status": "tsx src/cli.ts status",
+    "simulate": "tsx src/cli.ts simulate",
+    "scrape-rsi": "tsx src/cli.ts scrape-rsi",
+    "backfill": "tsx src/cli.ts backfill",
+    "walkforward": "tsx src/cli.ts walkforward",
+    "check": "tsc --noEmit",
+    "test": "node --import=tsx --test",
+    "build": "tsc --noEmit"
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@coinbase/cdp-sdk": "^1.51.2",
+    "duckdb": "^1.4.4",
+    "ink": "^7.1.0",
+    "kleur": "^4.1.5",
+    "puppeteer": "^25.2.1",
+    "react": "^19.2.7",
+    "redis": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3"
   }
 }

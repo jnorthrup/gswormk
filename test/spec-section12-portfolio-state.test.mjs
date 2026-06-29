@@ -23,7 +23,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PaperBroker } from '../src/trader/paper-broker.mjs';
+import { PaperBroker } from '../src/trader/paper-broker.ts';
 
 test('§12 buy: units increase, cash decreases by gross', () => {
   const broker = new PaperBroker({ initialCash: 100000 });

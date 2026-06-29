@@ -15,8 +15,8 @@ import {
   kalmanStep,
   computeDownsideSemivariance,
   computeTailDependence,
-} from '../src/trader/signals.mjs';
-import { downsideSemivariance, EPSILON, mean } from '../src/lib/math.mjs';
+} from '../src/trader/signals.ts';
+import { downsideSemivariance, EPSILON, mean } from '../src/lib/math.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // § 3.1  Midprice and Effective Spread
@@ -258,21 +258,18 @@ test('§3.3 observation target blends midprice and microprice', () => {
 //
 //  $$\bar r_{i,t} = \frac{1}{|W_\sigma|} \sum_{\tau \in W_\sigma} r_{i,\tau}$$
 //
-//  $$\sigma^{2,-}_{i,t}
-//    = \frac{1}{|W_\sigma|} \sum_{\tau \in W_\sigma}
-//      \min(0,\, r_{i,\tau} - \bar r_{i,t})^2$$
-//
+//  $$\\sigma^{2,-}_{i,t}
+//     = \\frac{1}{|W_\\sigma|} \\sum_{\\tau \\in W_\\sigma}
+//       \\min(0,\\, r_{i,\\tau})^2$$
+//  Note: target is 0 (not mean) for downside semivariance
 test('§3.4 downside semivariance ignores upside deviations', () => {
-  // All positive returns => all deviations from mean that are below mean get squared
+  // Returns: positive values should be ignored (target=0), negative values squared
   const returns = [0.05, 0.10, 0.15, 0.20, 0.25];
-  const avg = mean(returns); // 0.15
-  // downside deviations: 0.05-0.15=-0.1, 0.10-0.15=-0.05, 0, 0, 0
-  // semivar = (0.01 + 0.0025 + 0 + 0 + 0) / 5 = 0.0025
+  // All positive => semivariance = 0
   const sv = downsideSemivariance(returns);
-  const expected = ((-0.10) ** 2 + (-0.05) ** 2) / 5;
   assert.ok(
-    Math.abs(sv - expected) < 1e-12,
-    `semivariance=${sv} should equal ${expected}`,
+    Math.abs(sv - 0) < 1e-12,
+    `semivariance=${sv} should equal 0 for all positive returns`,
   );
 });
 
@@ -280,7 +277,7 @@ test('§3.4 downside semivariance ≤ total variance', () => {
   const returns = [-0.05, 0.02, -0.08, 0.01, -0.03, 0.04, -0.06, 0.03];
   const sv = downsideSemivariance(returns);
   const avg = mean(returns);
-  const totalVar = returns.reduce((s, r) => s + (r - avg) ** 2, 0) / returns.length;
+  const totalVar = returns.reduce((s, r) => s + (r - avg) ** 2, 0) / (returns.length - 1);
   assert.ok(sv <= totalVar + 1e-12, `semivariance ${sv} must ≤ variance ${totalVar}`);
 });
 
@@ -292,11 +289,15 @@ test('§3.4 computeDownsideSemivariance floors at ε_σ = 1e-9', () => {
 });
 
 test('§3.4 downside semivariance for pure downside series', () => {
+  // All returns are negative - with target=0, all are below target
   const returns = [-0.10, -0.05, -0.08, -0.12, -0.03];
-  const avg = mean(returns); // -0.076
-  // All returns are negative but some are above mean, some below
+  // Expected: (0.10^2 + 0.05^2 + 0.08^2 + 0.12^2 + 0.03^2) / 4 (Bessel's correction)
+  const expected = (0.01 + 0.0025 + 0.0064 + 0.0144 + 0.0009) / 4;
   const sv = downsideSemivariance(returns);
-  assert.ok(sv > 0, 'should be nonzero for series with variation');
+  assert.ok(
+    Math.abs(sv - expected) < 1e-12,
+    `semivariance=${sv} should equal ${expected}`,
+  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

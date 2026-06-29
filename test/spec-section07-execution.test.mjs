@@ -25,8 +25,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { urgencyFromInnovation } from '../src/trader/signals.mjs';
-import { logistic } from '../src/lib/math.mjs';
+import { urgencyFromInnovation } from '../src/trader/signals.ts';
+import { logistic } from '../src/lib/math.ts';
 
 test('§7 urgency = σ(|innovationZ|) via logistic function', () => {
   const z = 2.5;

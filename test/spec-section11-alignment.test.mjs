@@ -26,7 +26,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alignmentScore } from '../src/trader/signals.mjs';
+import { alignmentScore } from '../src/trader/signals.ts';
 
 test('§11 perfect alignment: identical live and replay → a = 1.0', () => {
   const live = { drift: 0.5, rvDown: 0.02, tail: 0.3 };

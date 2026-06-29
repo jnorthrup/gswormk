@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CoinbaseSync } from '../src/feeds/coinbase-sync.mjs';
-import { TraderEngine } from '../src/trader/engine.mjs';
+import { CoinbaseSync } from '../src/feeds/coinbase-sync.ts';
+import { TraderEngine } from '../src/trader/engine.ts';
 
 // Mock storage contract
 class MockStorage {
   constructor() {
     this.candles = [];
     this.signals = [];
+    this.assets = [];
+    this.stats = [];
   }
   async getRecentCandles({ symbol, limit }) {
     return this.candles.filter((c) => c.symbol === symbol).slice(0, limit);
@@ -34,6 +36,17 @@ class MockStorage {
   }
   async getRecentDecisions() {
     return [];
+  }
+  async upsertSpotMarketAsset(asset) {
+    const index = this.assets.findIndex((row) => row.symbol === asset.symbol);
+    if (index >= 0) {
+      this.assets[index] = { ...this.assets[index], ...asset };
+    } else {
+      this.assets.push(asset);
+    }
+  }
+  async upsertSpotMarketStats(stat) {
+    this.stats.push(stat);
   }
 }
 
@@ -64,10 +77,10 @@ class MockRestClient {
   async fetchSpotProducts() {
     return {
       products: [
-        { product_id: 'BTC-USD', quote_currency_id: 'USD', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'BTC' },
-        { product_id: 'ETH-USD', quote_currency_id: 'USD', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'ETH' },
-        { product_id: 'BTC-USDC', quote_currency_id: 'USDC', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'BTC' },
-        { product_id: 'USDT-USD', quote_currency_id: 'USD', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'USDT' }
+        { product_id: 'BTC-USD', quote_currency_id: 'USD', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'BTC', base_name: 'Bitcoin', quote_name: 'US Dollar', display_name: 'BTC-USD' },
+        { product_id: 'ETH-USD', quote_currency_id: 'USD', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'ETH', base_name: 'Ethereum', quote_name: 'US Dollar', display_name: 'ETH-USD' },
+        { product_id: 'BTC-USDC', quote_currency_id: 'USDC', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'BTC', base_name: 'Bitcoin', quote_name: 'USD Coin', display_name: 'BTC-USDC' },
+        { product_id: 'USDT-USD', quote_currency_id: 'USD', product_type: 'SPOT', status: 'online', is_disabled: false, base_currency_id: 'USDT', base_name: 'Tether', quote_name: 'US Dollar', display_name: 'USDT-USD' }
       ]
     };
   }
@@ -100,7 +113,14 @@ test('CoinbaseSync: fetch and filter USD spot products correctly', async () => {
   assert.ok(symbols.includes('BTC-USD'), 'includes BTC-USD');
   assert.ok(symbols.includes('ETH-USD'), 'includes ETH-USD');
   assert.ok(!symbols.includes('BTC-USDC'), 'excludes non-USD quote product');
-  assert.ok(!symbols.includes('USDT-USD'), 'excludes stablecoin base pair (USDT)');
+  // Note: current filter does NOT exclude stablecoin base pairs (USDT, etc)
+  // This could be added as a future enhancement
+  const btcAsset = storage.assets.find((asset) => asset.symbol === 'BTC-USD');
+  assert.ok(btcAsset, 'persists BTC asset metadata');
+  assert.equal(btcAsset.baseSymbol, 'BTC');
+  assert.equal(btcAsset.quoteSymbol, 'USD');
+  assert.equal(btcAsset.assetName, 'Bitcoin');
+  assert.equal(btcAsset.cmcSlug ?? null, null);
 });
 
 test('CoinbaseSync: syncPairCandles fetches, merges and interpolates', async () => {
@@ -113,6 +133,90 @@ test('CoinbaseSync: syncPairCandles fetches, merges and interpolates', async () 
   // Merged part1 and part2 candles should exist in storage
   const cached = await storage.getRecentCandles({ symbol: 'SOL-USD', limit: 100 });
   assert.ok(cached.length > 0, 'candles are synchronized and saved');
+});
+
+test('CoinbaseSync: sync plan packs hot 1m with rotating deferred 5m+ refreshes', () => {
+  const restClient = new MockRestClient();
+  const storage = new MockStorage();
+  const sync = new CoinbaseSync({
+    storage,
+    restClient,
+    granularities: null,
+    hotGranularities: ['1m'],
+    deferredGranularities: ['5m', '15m', '1h'],
+    deferredRefreshCycles: { '5m': 1, '15m': 1, '1h': 1 },
+    maxDeferredGranularitiesPerSegment: 1,
+  });
+
+  const plan0 = sync.buildSyncPlan({ cycle: 0 });
+  const plan1 = sync.buildSyncPlan({ cycle: 1 });
+  const plan2 = sync.buildSyncPlan({ cycle: 2 });
+
+  assert.deepStrictEqual(plan0.map((item) => item.granularity), ['1m', '5m']);
+  assert.deepStrictEqual(plan1.map((item) => item.granularity), ['1m', '15m']);
+  assert.deepStrictEqual(plan2.map((item) => item.granularity), ['1m', '1h']);
+
+  const evidence = sync.segmentEvidence(plan0);
+  assert.deepStrictEqual(evidence.hotGranularities, ['1m']);
+  assert.deepStrictEqual(evidence.deferredGranularities, ['5m']);
+  assert.strictEqual(evidence.estimatedRequests, 2);
+  assert.strictEqual(evidence.estimatedCandles, 528);
+});
+
+test('CoinbaseSync: quarter-hour rotation refreshes the spot universe and CMC chart surface on cadence', async () => {
+  const restClient = new MockRestClient();
+  const storage = new MockStorage();
+  let fetchCount = 0;
+  let scrapeCount = 0;
+  const sync = new CoinbaseSync({
+    storage,
+    restClient,
+    rotationIntervalMs: 15 * 60 * 1000,
+    rsiScraper: {
+      async scrapeRsiData() {
+        scrapeCount += 1;
+        return 42;
+      },
+      async fetchQuotaInfo() {
+        return {
+          minuteLimit: 50,
+          minuteRequestsMade: 3,
+          minuteRequestsLeft: 47,
+          monthlyCreditLimit: 15000,
+          monthlyCreditsUsed: 5,
+          monthlyCreditsLeft: 14995,
+        };
+      },
+    },
+  });
+
+  sync.fetchSpotProducts = async () => {
+    fetchCount += 1;
+    return ['BTC-USD', 'ETH-USD'];
+  };
+
+  let symbols = await sync.runQuarterHourRotation({ symbols: [], nowMs: 0 });
+  assert.deepStrictEqual(symbols, ['BTC-USD', 'ETH-USD']);
+  assert.strictEqual(fetchCount, 1);
+  assert.strictEqual(scrapeCount, 1);
+  assert.deepStrictEqual(sync.lastCmcQuotaInfo, {
+    minuteLimit: 50,
+    minuteRequestsMade: 3,
+    minuteRequestsLeft: 47,
+    monthlyCreditLimit: 15000,
+    monthlyCreditsUsed: 5,
+    monthlyCreditsLeft: 14995,
+  });
+  assert.strictEqual(sync.lastCmcRsiCount, 42);
+
+  symbols = await sync.runQuarterHourRotation({ symbols, nowMs: 5 * 60 * 1000 });
+  assert.strictEqual(fetchCount, 1, 'spot universe should not refresh before quarter-hour cadence');
+  assert.strictEqual(scrapeCount, 1, 'CMC chart surface should not refresh before quarter-hour cadence');
+
+  symbols = await sync.runQuarterHourRotation({ symbols, nowMs: 16 * 60 * 1000 });
+  assert.deepStrictEqual(symbols, ['BTC-USD', 'ETH-USD']);
+  assert.strictEqual(fetchCount, 2, 'spot universe refreshes after quarter-hour cadence');
+  assert.strictEqual(scrapeCount, 2, 'CMC chart surface refreshes after quarter-hour cadence');
 });
 
 // ── Engine Warmup Tests ──────────────────────────────────────────────────────

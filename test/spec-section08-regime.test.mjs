@@ -20,7 +20,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 test('§8 regime vector contains exactly [obi, innovZ, rvDown, tailDep] components', () => {
-  // The regime vector in engine.mjs uses {momentum, meanReversion, volatility}
+  // The regime vector in engine.ts uses {momentum, meanReversion, volatility}
   // which is a derived 3-component summary.  The spec defines a 4-component
   // raw state vector.  This test asserts the spec shape.
   const regimeVector = {

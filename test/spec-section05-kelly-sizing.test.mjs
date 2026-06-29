@@ -24,9 +24,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { induceKelly } from '../src/trader/signals.mjs';
-import { derivePortfolioTargets } from '../src/trader/optimizer.mjs';
-import { EPSILON } from '../src/lib/math.mjs';
+import { induceKelly } from '../src/trader/signals.ts';
+import { derivePortfolioTargets } from '../src/trader/optimizer.ts';
+import { EPSILON } from '../src/lib/math.ts';
 
 // ── §5 Kelly formula ────────────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ test('§5 all zero kelly yields all zero weights', () => {
 
 test('§5 spec portfolio normalization: w* = ρ · max(0,k) / Σmax(0,k)', () => {
   // The spec does NOT include regimeBoost or systemicPenalty in normalization.
-  // This test asserts the pure spec formula.
+  // This test asserts the pure spec formula WITH waterfilling redistribution.
   const signals = [
     { symbol: 'BTC-USD', rawKelly: 5.0, tailDependence: 0.2, regime: { momentum: 0 } },
     { symbol: 'ETH-USD', rawKelly: 3.0, tailDependence: 0.3, regime: { momentum: 0 } },
@@ -164,21 +164,20 @@ test('§5 spec portfolio normalization: w* = ρ · max(0,k) / Σmax(0,k)', () =>
 
   const targets = derivePortfolioTargets({ signals, reinvestPct, maxPositionPct });
 
-  // Spec normalization (without regime/systemic modifiers):
-  // u_BTC = max(0, 5.0) = 5.0
-  // u_ETH = max(0, 3.0) = 3.0
-  // sum = 8.0
-  // w*_BTC = 0.9 * 5/8 = 0.5625 → capped at 0.45
-  // w*_ETH = 0.9 * 3/8 = 0.3375
-  const expectedBtc = Math.min(reinvestPct * 5.0 / 8.0, maxPositionPct);
-  const expectedEth = Math.min(reinvestPct * 3.0 / 8.0, maxPositionPct);
+  // With waterfilling redistribution:
+  // Initial: BTC = 0.5625, ETH = 0.3375
+  // BTC capped at 0.45, excess = 0.1125 redistributed to ETH
+  // ETH becomes 0.45 (also capped), total = 0.9
+  // Both end up at maxPositionPct
+  const expectedBtc = maxPositionPct;
+  const expectedEth = maxPositionPct;
 
   assert.ok(
     Math.abs(targets.get('BTC-USD') - expectedBtc) < 1e-6,
-    `BTC weight=${targets.get('BTC-USD')} should match spec ${expectedBtc}`,
+    `BTC weight=${targets.get('BTC-USD')} should match waterfilling ${expectedBtc}`,
   );
   assert.ok(
     Math.abs(targets.get('ETH-USD') - expectedEth) < 1e-6,
-    `ETH weight=${targets.get('ETH-USD')} should match spec ${expectedEth}`,
+    `ETH weight=${targets.get('ETH-USD')} should match waterfilling ${expectedEth}`,
   );
 });
